@@ -106,6 +106,47 @@ atoi(const char *s)
   return n;
 }
 
+// added by me.
+// if sz is smaller than the number of digits,
+// then only the first sz characters are set.
+void itoa(int i, char* buf, int sz)
+{
+	// temp buffer,
+	// because it's impossible to know how 
+	// many digits there are without running the following
+	// algo through. The buffer is used to record the characters
+	// extracted in the algorithm.
+	char tmp[16]; // 10^16 is big enough for int.
+
+	int q = i > 0 ? i : -i;
+	// where into the buf (inversely)
+	int c = 1;
+	while (q > 0)
+	{
+		int r = q % 10;
+		tmp[16-c] = '0' + r;
+
+		q /= 10;
+		++c;
+	}
+	// add the minus sign if negative.
+	if (i < 0)
+	{
+		tmp[16-c] = '-';
+		++c;
+	}
+	// c-1 characters are in tmp.
+
+	// only copy min(c-1,sz-1) characters.
+	int j;
+	for (j = 0; j < c-1 && j < sz-1; ++j)
+	{
+		buf[j] = tmp[16-j-1];
+	}
+	// end with \0.
+	buf[j] = '\0';
+}
+
 void*
 memmove(void *vdst, const void *vsrc, int n)
 {
