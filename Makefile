@@ -195,10 +195,14 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 
+# test_wait is not one of the lab,
+# but I include it to test if wait will wait for non-immediate children.
 ifeq ($(LAB),util)
 UPROGS += \
+	$U/_test_wait\
 	$U/_sleep\
-	$U/_pingpong
+	$U/_pingpong\
+	$U/_primes
 endif
 
 ifeq ($(LAB),syscall)
