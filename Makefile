@@ -202,7 +202,8 @@ UPROGS += \
 	$U/_test_wait\
 	$U/_sleep\
 	$U/_pingpong\
-	$U/_primes
+	$U/_primes\
+	$U/_find
 endif
 
 ifeq ($(LAB),syscall)
