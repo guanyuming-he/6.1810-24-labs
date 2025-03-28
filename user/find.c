@@ -16,6 +16,12 @@
 // @param prefix is used to control output,
 // because output has to be relative to the cwd,
 // but getcwd is not a syscall.
+// The printed files will start with prefix.
+// Generally, we want prefix to be root/.
+// e.g. root = . then prefix = ./ 
+// root = abc then prefix = abc/
+// root being absolute path (/*) is rejected
+// in main.
 int find(const char* target, const char* root, const char* prefix)
 {
 	int rfd = open(root, O_RDONLY);
