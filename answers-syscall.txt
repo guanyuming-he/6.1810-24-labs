@@ -1,0 +1,17 @@
+1. usertrap() called syscall().
+
+2. Its value is 7. Its value represents the type of system call being performed.
+In this case, 7 = SYS_exec (in kernel/syscall.h), meaning we are calling exec().
+
+3. User mode. Deduced from SPP=0, according to Privileged manual pp. 90--91.
+
+4. lw a3,0(zero)
+a3 would hold the value of num.
+
+5. 
+No, 0x0 is not mapped to physical memory in the kernel's address space.
+Yes, it is confirmed by:
+scause=0xd=13, this means interrupt bit = 0 and exception code = 13,
+which means Load page fault.
+
+6. name is initcode. pid = 1.
