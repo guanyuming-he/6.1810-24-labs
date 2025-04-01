@@ -146,6 +146,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // lab syscall:
+  // by default, tracing is not enabled.
+  p->tracemask = 0;
+
   return p;
 }
 
@@ -309,6 +313,10 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // lab syscall:
+  // child inherit parent's tracing.
+  np->tracemask = p->tracemask;
 
   pid = np->pid;
 
@@ -692,4 +700,20 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// lab syscall:
+// sets the tracing mask of the current process,
+// which will be inherited by its children.
+int trace(int mask)
+{
+	struct proc *p = myproc();
+	if (!p)
+		return -1;
+
+	acquire(&p->lock);
+	p->tracemask = mask;
+	release(&p->lock);
+
+	return 0;
 }
