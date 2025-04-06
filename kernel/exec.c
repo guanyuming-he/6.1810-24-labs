@@ -121,12 +121,12 @@ exec(char *path, char **argv)
   // different from in freeproc().
   // see the comment at user/attack.c:55 for how this number is 
   // calculated.
-  int sz_round_up = PGROUNDUP(oldsz);
-  int num_pages_freed = sz_round_up/PGSIZE +
-	  sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
-	  1 + // level 1: 1GB. Can never exceed, so 1.
-	  1; // level 2: 512 GB, Can never exceed, so 1.
-  printf("exec:%d pages freed for proc %s\n", num_pages_freed, p->name);
+  // int sz_round_up = PGROUNDUP(oldsz);
+  // int num_pages_freed = sz_round_up/PGSIZE +
+  //     sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
+  //     1 + // level 1: 1GB. Can never exceed, so 1.
+  //     1; // level 2: 512 GB, Can never exceed, so 1.
+  // printf("exec:%d pages freed for proc %s\n", num_pages_freed, p->name);
 
   // Save program name for debugging.
   for(last=s=path; *s; s++)
@@ -139,12 +139,12 @@ exec(char *path, char **argv)
   // Note that here the trapframe is not alloced, but reused,
   // see the comment at user/attack.c:55 for how this number is 
   // calculated.
-  int new_sz_round_up = PGROUNDUP(sz);
-  int num_pages_alloc = new_sz_round_up/PGSIZE +
-	  new_sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
-	  1 + // level 1: 1GB. Can never exceed, so 1.
-	  1; // level 2: 512 GB, Can never exceed, so 1.
-  printf("exec:%d pages alloc for proc %s\n", num_pages_alloc, p->name);
+  // int new_sz_round_up = PGROUNDUP(sz);
+  // int num_pages_alloc = new_sz_round_up/PGSIZE +
+  //     new_sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
+  //     1 + // level 1: 1GB. Can never exceed, so 1.
+  //     1; // level 2: 512 GB, Can never exceed, so 1.
+  // printf("exec:%d pages alloc for proc %s\n", num_pages_alloc, p->name);
   
   // Commit to the user image.
   oldpagetable = p->pagetable;

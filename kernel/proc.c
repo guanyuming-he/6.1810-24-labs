@@ -169,12 +169,12 @@ freeproc(struct proc *p)
   // print how many pages are freed for this process.
   // see the comment at user/attack.c:55 for how this number is 
   // calculated.
-  int sz_round_up = PGROUNDUP(p->sz);
-  int num_pages_freed = 1 + sz_round_up/PGSIZE +
-	  sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
-	  1 + // level 1: 1GB. Can never exceed, so 1.
-	  1; // level 2: 512 GB, Can never exceed, so 1.
-  printf("%d pages freed for proc %s\n", num_pages_freed, p->name);
+  // int sz_round_up = PGROUNDUP(p->sz);
+  // int num_pages_freed = 1 + sz_round_up/PGSIZE +
+  //     sz_round_up / (2*1024*1024) + // a level 0 (leaf) pagetable page contains up to 2MB vm.
+  //     1 + // level 1: 1GB. Can never exceed, so 1.
+  //     1; // level 2: 512 GB, Can never exceed, so 1.
+  // printf("%d pages freed for proc %s\n", num_pages_freed, p->name);
 
   p->pagetable = 0;
   p->sz = 0;
