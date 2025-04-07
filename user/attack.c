@@ -19,8 +19,8 @@ main(int argc, char *argv[])
   // 	- calls two uvmunmap to unmap both the trampoline and the trapframe
   // 	from the process's page table, but does not free them (last arg = 0).
   // 	This is because,
-  // 	the trampoline is not allocated physically, so no needing to be freed,
-  // 	while the trapframe is already freed.
+  // 	the trampoline does not belong to this process (see section 4 for why),
+  // 	so no needing to be freed, while the trapframe is already freed.
   // 	- calls uvmfree to free the rest pages in the pagetable.
   // 3. Note that the proc struct itself is statically allocated in an array
   // (i.e. stored in kernel data), so no new pages comes from here.
