@@ -202,6 +202,31 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // lab pagetable
+  // In principle, the pidpage should belong to the process, i.e., be put in
+  // struct proc. However, since each proc has a unique pagetable, it also makes
+  // sense to let the page belong to the table, so that I only need to manage it
+  // at the ctor and dtor of the pagetable. Whereas if I put it in proc, I will
+  // also need to manage it in fork, in addition to in the ctor and dtor of
+  // proc.
+  // Map a read only page at USYSCALL
+  // first, alloc a physical page for the struct.
+  // Do not need to modify the kernel page table,
+  // as all physical memory is already mapped there at boot with the same
+  // addressed.
+  void* pidpage = kalloc();
+  // store the pid.
+  ((struct usyscall*)pidpage)->pid = p->pid;
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(pidpage), PTE_R | PTE_U) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+	// freed in freeproc, which will be called if this function fails,
+	// so no need to free here.
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
   return pagetable;
 }
 
@@ -212,6 +237,9 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  // lab pagetable
+  // in contrast to the above two, USYSCALL belongs to the pagetable.
+  uvmunmap(pagetable, USYSCALL, 1, 1);
   uvmfree(pagetable, sz);
 }
 
