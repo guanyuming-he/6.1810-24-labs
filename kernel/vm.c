@@ -488,9 +488,65 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 
 #ifdef LAB_PGTBL
+// @param pagetable physical address of the pagetable
 void
 vmprint(pagetable_t pagetable) {
-  // your code here
+	// format:
+	// Define entry_line :=
+	// <vm start for this entry>: pte <pte value> pa <physical address>
+	//
+	// page table: <table pa>
+	//
+	// For each level 2 entry:
+	// ..entry_line
+	// 	 For each level 1 entry:
+	// 	 .. ..entry_line
+	// 	 	For each level 0 entry:
+	// 	 	.. .. ..entry_line
+	
+    printf("page table 0x%lx\n", (uint64)pagetable);
+	// for each level 2 entry.
+	// The range for user space vm is 0 -- MAXVA.
+	for (uint64 va2 = 0; va2 < MAXVA; va2 += 0x40000000L) // += 1GB
+	{
+		pte_t *pte2 = &pagetable[PX(2, va2)];
+
+		if(*pte2 & PTE_V)
+		// exists
+		{
+			pagetable_t pt1 = (pagetable_t)PTE2PA(*pte2);
+			printf("..0x%lx: pte 0x%lx pa 0x%lx\n", va2, (uint64)pte2, (uint64)pt1);
+			// for each level 1 entry.
+			for (uint64 off1 = 0; off1 < 0x40000000L; off1 += 0x200000L) // += 2MB
+			{
+				uint64 va1 = va2 + off1;
+				pte_t *pte1 = &pt1[PX(1, va1)];
+
+				if(*pte1 & PTE_V)
+				// exists
+				{
+					pagetable_t pt0 = (pagetable_t)PTE2PA(*pte1);
+					printf(".. ..0x%lx: pte 0x%lx pa 0x%lx\n", va1, (uint64)pte1, (uint64)pt0);
+					// for each level 0 entry.
+					for (uint64 off0 = 0; off0 < 0x200000L; off0 += 0x1000L) // 2KB
+					{
+						uint64 va0 = va1 + off0;
+						pte_t *pte0 = &pt0[PX(0, va0)];
+						if (*pte0 & PTE_V)
+						{
+							uint64 pa = PTE2PA(*pte0);
+							printf
+							(
+									".. .. ..0x%lx: pte 0x%lx pa 0x%lx\n", 
+									va0, (uint64)pte0, pa
+							);
+						}
+					}
+				}
+			}
+		}
+
+	}		
 }
 #endif
 
