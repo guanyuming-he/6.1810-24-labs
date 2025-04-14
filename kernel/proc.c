@@ -197,7 +197,7 @@ proc_pagetable(struct proc *p)
   // trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
-    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAMPOLINE, TRAMPOLINE+PGSIZE, 0);
     uvmfree(pagetable, 0);
     return 0;
   }
@@ -219,10 +219,10 @@ proc_pagetable(struct proc *p)
   ((struct usyscall*)pidpage)->pid = p->pid;
   if(mappages(pagetable, USYSCALL, PGSIZE,
               (uint64)(pidpage), PTE_R | PTE_U) < 0){
-    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAMPOLINE, TRAMPOLINE+PGSIZE, 0);
 	// freed in freeproc, which will be called if this function fails,
 	// so no need to free here.
-    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, TRAPFRAME+PGSIZE, 0);
     uvmfree(pagetable, 0);
     return 0;
   }
@@ -235,11 +235,11 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, TRAMPOLINE, TRAMPOLINE+PGSIZE, 0);
+  uvmunmap(pagetable, TRAPFRAME, TRAPFRAME+PGSIZE, 0);
   // lab pagetable
   // in contrast to the above two, USYSCALL belongs to the pagetable.
-  uvmunmap(pagetable, USYSCALL, 1, 1);
+  uvmunmap(pagetable, USYSCALL, USYSCALL+PGSIZE, 1);
   uvmfree(pagetable, sz);
 }
 

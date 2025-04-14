@@ -10,6 +10,7 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+void superfreerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -21,13 +22,21 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+#ifdef LAB_PGTBL
+  struct run *superlist;
+#endif
 } kmem;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+#ifdef LAB_PGTBL
+  freerange(end, (void*)SUPSTART);
+  superfreerange((void*)SUPSTART, (void*)PHYSTOP);
+#else
   freerange(end, (void*)PHYSTOP);
+#endif
 }
 
 void
@@ -39,6 +48,17 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
+#ifdef LAB_PGTBL
+void
+superfreerange(void *pa_start, void *pa_end)
+{
+  char *p;
+  p = (char*)PGROUNDUP((uint64)pa_start);
+  for(; p + SPSIZE <= (char*)pa_end; p += SPSIZE)
+    superfree(p);
+}
+#endif
+
 // Free the page of physical memory pointed at by pa,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
@@ -48,7 +68,11 @@ kfree(void *pa)
 {
   struct run *r;
 
+#ifdef LAB_PGTBL
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= SUPSTART)
+#else
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+#endif
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
@@ -80,3 +104,48 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+#ifdef LAB_PGTBL
+// Superpage.
+// Free the page of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to kalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void
+superfree(void *pa)
+{
+  struct run *r;
+
+  if(((uint64)pa % SPSIZE) != 0 || (uint64)pa < SUPSTART || (uint64)pa >= PHYSTOP)
+    panic("superfree");
+
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, SPSIZE);
+
+  r = (struct run*)pa;
+
+  acquire(&kmem.lock);
+  r->next = kmem.superlist;
+  kmem.superlist = r;
+  release(&kmem.lock);
+}
+
+// Allocate one 4096-byte page of physical memory.
+// Returns a pointer that the kernel can use.
+// Returns 0 if the memory cannot be allocated.
+void *
+superalloc(void)
+{
+  struct run *r;
+
+  acquire(&kmem.lock);
+  r = kmem.superlist;
+  if(r)
+    kmem.superlist = r->next;
+  release(&kmem.lock);
+
+  if(r)
+    memset((char*)r, 5, SPSIZE); // fill with junk
+  return (void*)r;
+}
+#endif
