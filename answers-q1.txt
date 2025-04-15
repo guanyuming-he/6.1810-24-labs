@@ -1,0 +1,10 @@
+0x0 	contains text.	permission AUXRV
+0x1000	contains data.	permission UWRV
+0x2000	contains guard.	permission WRV
+0x3000	contains stack. permission DAUWRV
+.
+.
+.
+0xFFFFD000	contains the pid page for speeding up pid() call.	permission URV.
+0xFFFFE000	contains the trapframe for the process.				permission DARWV.
+0xFFFFF000	contains the trampoline.							permission AXRV.
