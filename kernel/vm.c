@@ -628,13 +628,13 @@ vmprint(pagetable_t pagetable) {
 	// page table: <table pa>
 	//
 	// For each level 2 entry:
-	// ..entry_line
+	// SPACE ..entry_line
 	// 	 For each level 1 entry:
-	// 	 .. ..entry_line
+	// 	 SPACE .. ..entry_line
 	// 	 	For each level 0 entry:
-	// 	 	.. .. ..entry_line
+	// 	 	SPACE .. .. ..entry_line
 	
-    printf("page table 0x%lx\n", (uint64)pagetable);
+    printf("page table %p\n", (void*)pagetable);
 	// for each level 2 entry.
 	// The range for user space vm is 0 -- MAXVA.
 	for (uint64 va2 = 0; va2 < MAXVA; va2 += 0x40000000L) // += 1GB
@@ -645,7 +645,7 @@ vmprint(pagetable_t pagetable) {
 		// exists
 		{
 			pagetable_t pt1 = (pagetable_t)PTE2PA(*pte2);
-			printf("..0x%lx: pte 0x%lx pa 0x%lx\n", va2, (uint64)pte2, (uint64)pt1);
+			printf(" ..%p: pte %p pa %p\n", (void*)va2, (void*)pte2, (void*)pt1);
 			// for each level 1 entry.
 			for (uint64 off1 = 0; off1 < 0x40000000L; off1 += 0x200000L) // += 2MB
 			{
@@ -656,7 +656,7 @@ vmprint(pagetable_t pagetable) {
 				// exists
 				{
 					pagetable_t pt0 = (pagetable_t)PTE2PA(*pte1);
-					printf(".. ..0x%lx: pte 0x%lx pa 0x%lx\n", va1, (uint64)pte1, (uint64)pt0);
+					printf(" .. ..%p: pte %p pa %p\n", (void*)va1, (void*)pte1, (void*)pt0);
 					// for each level 0 entry.
 					for (uint64 off0 = 0; off0 < 0x200000L; off0 += 0x1000L) // 2KB
 					{
@@ -667,8 +667,8 @@ vmprint(pagetable_t pagetable) {
 							uint64 pa = PTE2PA(*pte0);
 							printf
 							(
-									".. .. ..0x%lx: pte 0x%lx pa 0x%lx\n", 
-									va0, (uint64)pte0, pa
+									" .. .. ..%p: pte %p pa %p\n", 
+									(void*)va0, (void*)pte0, (void*)pa
 							);
 						}
 					}
