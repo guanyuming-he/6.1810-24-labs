@@ -109,13 +109,13 @@ walk_i(pagetable_t pagetable, uint64 va, int alloc, int* el)
     if(*pte & PTE_V) {
 #ifdef LAB_PGTBL
       if(PTE_LEAF(*pte)) {
-		*el = level-1;
+		*el = level;
         return pte;
       }
 #endif
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      if(!alloc || (pagetable = (pte_t*)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
@@ -162,18 +162,18 @@ walkaddr(pagetable_t pagetable, uint64 va)
 void
 kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
 {
-  if(mappages(kpgtbl, va, sz, pa, perm) != 0)
+  if(mappages(kpgtbl, va, sz, pa, perm) < 0L)
     panic("kvmmap");
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa.
 // va and size MUST be page-aligned.
-// Returns 0 on success, -1 if walk() couldn't
+// Returns the actual end of va, -1 if walk() couldn't
 // allocate a needed page-table page.
 //
 // @param super 1 if the first page is a super page.
-int
+uint64
 mappages_i(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm, int super)
 {
   uint64 a, last;
@@ -192,9 +192,12 @@ mappages_i(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm, i
 
   if (super)
   {
-	// map a super page, stop at level 1.
+	// To map a super page, first make va 2MB aligned.
+	a = SUPERPGROUNDUP(va);
+
+	// then retreive a level 1 entry for it.
 	int el = 1;
-	if((pte = walk_i(pagetable, va, 1, &el)) == 0)
+	if((pte = walk_i(pagetable, a, 1, &el)) == 0)
 		return -1;
 	if (el != 1)
 		panic("mappages: super not walked to 1.");
@@ -203,9 +206,17 @@ mappages_i(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm, i
 	
 	*pte = PA2PTE(pa) | perm | PTE_V;
 	a += SPSIZE;
+  	last = a + size - PGSIZE - SPSIZE;
+
+	if (last <= a)
+		return a;
+  }
+  else {
+  	last = a + size - PGSIZE;
+	if (last < 0)
+		return a;
   }
 
-  last = va + size - PGSIZE;
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
@@ -217,10 +228,10 @@ mappages_i(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm, i
     a += PGSIZE;
     pa += PGSIZE;
   }
-  return 0;
+  return last+PGSIZE;
 }
 
-int
+uint64
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 { return mappages_i(pagetable, va, size, pa, perm, 0); }
 
@@ -241,10 +252,23 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 ve, int do_free)
   for(a = va; a < ve; a += sz){
 	int el = 0;
     if((pte = walk_i(pagetable, a, 0, &el)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0) {
-      printf("va=%ld pte=%ld\n", a, *pte);
-      panic("uvmunmap: not mapped");
+	{
+	  // usually we should panic, but becaues of superpages,
+	  // there can be gaps before the 2MB aligned super page.
+	  // Hence, we just advance one page here.
+	  sz = PGSIZE;
+	  continue;
+      //panic("uvmunmap: walk");
+	}
+    if((*pte & PTE_V) == 0)
+	{
+	  // usually we should panic, but becaues of superpages,
+	  // there can be gaps before the 2MB aligned super page.
+	  // Hence, we just advance one page here.
+	  sz = PGSIZE;
+	  continue;
+      // printf("va=%ld pte=%ld\n", a, *pte);
+      // panic("uvmunmap: not mapped");
     }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
@@ -329,17 +353,18 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 		return 0; // nothing new alloced, just return 0.
 	
 	memset(mem, 0, SPSIZE);
-    if(mappages_i(pagetable, a, SPSIZE, (uint64)mem, PTE_R|PTE_U|xperm, 1) != 0){
+    if((a = mappages_i(pagetable, a, SPSIZE, (uint64)mem, PTE_R|PTE_U|xperm, 1)) < 0L){
       superfree(mem);
       return 0;
     }
-	// don't forget this
-	a += SPSIZE;
+	// a is now set as the new end.
+	// adjust new sz.
+	newsz = a+newsz-oldsz-SPSIZE;
   }
 #endif
 
   // yeah, the rest can all be normal pages.
-  for(; a < newsz; a += sz){
+  for(; a < newsz;){
     sz = PGSIZE;
     mem = kalloc();
     if(mem == 0){
@@ -349,7 +374,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 #ifndef LAB_SYSCALL
     memset(mem, 0, sz);
 #endif
-    if(mappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
+    if((a=mappages(
+		pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm)
+	) < 0L){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
@@ -422,10 +449,18 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += szinc){
 	int el = 0;
+	
     if((pte = walk_i(old, i, 0, &el)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+	{
+	  // usually we should panic. But here because superpage is 
+	  // 2MB aligned, there can be gaps in the user proc mem.
+	  // in this case, just continue to the next page.
+	  szinc = PGSIZE;
+	  continue;
+      // panic("uvmcopy: page not present");
+	}
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 
@@ -435,7 +470,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 		if((mem = kalloc()) == 0)
 		  goto err;
 		memmove(mem, (char*)pa, szinc);
-		if(mappages(new, i, szinc, (uint64)mem, flags) != 0){
+		if(mappages(new, i, szinc, (uint64)mem, flags) < 0L){
 		  kfree(mem);
 		  goto err;
 		}
@@ -446,7 +481,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 		if((mem = superalloc()) == 0)
 		  goto err;
 		memmove(mem, (char*)pa, szinc);
-		if(mappages_i(new, i, szinc, (uint64)mem, flags, 1) != 0){
+		if(mappages_i(new, i, szinc, (uint64)mem, flags, 1) < 0L){
 		  superfree(mem);
 		  goto err;
 		}
