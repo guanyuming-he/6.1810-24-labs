@@ -1,0 +1,28 @@
+Which regiesters contain arguments to functions?
+- g(int x): a0.
+- f(int x): a0.
+- main(void): no argument.
+- printf(const char*, ...): a0, a1, a2, ...
+- exit(int): a0.
+
+Where is the call to function f in the assembly code for main?
+- f is inlined, and the assembly directly uses 12=8+3+1=f(8)+1.
+Where is the call to g?
+- g is also inlined, in f. In fact, f's assembly code is identical to g's.
+
+At What address is the function printf located?
+- 6be.
+
+What value is in the register ra just after the jalr to prinft in main?
+- 0x34.
+
+What is the output?
+- HE110 World
+If the RISC-V was instead big-endian, then 
+- I would set i = 0x726c6400.
+- No, I would not change 57616, because little or big-endian is transparent to
+	specifying the value.
+
+What is going to be printed after 'y='?
+- Whatever is in the register a2, in decimal, I guess.
+
