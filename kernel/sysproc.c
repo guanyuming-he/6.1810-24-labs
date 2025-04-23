@@ -51,6 +51,12 @@ sys_sbrk(void)
 uint64
 sys_sleep(void)
 {
+
+// exercise backtrace.
+#ifdef LAB_TRAPS
+	backtrace();
+#endif
+
   int n;
   uint ticks0;
 

@@ -162,6 +162,10 @@ printf(char *fmt, ...)
 void
 panic(char *s)
 {
+#ifdef LAB_TRAPS
+	backtrace();
+#endif
+
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
@@ -175,4 +179,54 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+extern char etext[];  // kernel.ld sets this to end of kernel code.
+
+/**
+ * Back trace will print, for every function in the call stack,
+ * a line of its virtual address, in the order from the current function to the
+ * outmost function, but does not include backtrace itself.
+ */
+void
+backtrace()
+{
+	printf("backtrace:\n");
+
+	// first, because each process's kstack is always of 1 PGSIZE,
+	// we can use ROUNDDOWN(s0) and ROUNDUP(s0) as the page boundaries.
+	uint64 s0 = r_fp();
+	const uint64 ks_low = PGROUNDDOWN(s0);
+	const uint64 ks_high = PGROUNDUP(s0);
+
+	// second, the return address must be between KERNBASE
+	// and kernel text end, which is the variable etext.
+	const uint64 rt_low = KERNBASE;
+	const uint64 rt_high = (uint64)etext;
+
+	// now, for each s0:
+	// if s0, stack frame point, is out of [ks_low, ks_high], ir
+	// if *(s0-8), ret addr, is out of [rt_low, rt_high],
+	// then break.
+	// Otherwise,
+	// print *(s0-8).
+	// s0 <- *(s0-16).
+	uint64 rt;
+	for(;;)
+	{
+		// must check this first before using s0 to 
+		// assign the value of rt.
+		if(s0 < ks_low || s0 > ks_high)
+			break;
+
+		// uint64* - 1 is char* - 8.
+		// rt <- *(s0-8).
+		rt = *((uint64*)s0 - 1);
+		if (rt < rt_low || rt > rt_high)
+			break;
+
+		printf("%p\n", (void*)rt);
+		// s0 <- *(s0-16).
+		s0 = *((uint64*)s0 - 2);
+	}
 }

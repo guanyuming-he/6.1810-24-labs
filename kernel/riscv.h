@@ -338,6 +338,20 @@ r_ra()
   return x;
 }
 
+// reads s0, i.e. frame pointer that points
+// to the stack frame of the current function.
+// The parameter saving convention is that
+// s0-8 is ra, the return address, s0-16 is the previous s0,
+// i.e. if the previous function doesnt use it for something else,
+// the previous stack frame.
+static inline uint64
+r_fp()
+{
+	uint64 x;
+	asm volatile("mv %0, s0" : "=r" (x) );
+	return x;
+}
+
 // flush the TLB.
 static inline void
 sfence_vma()
