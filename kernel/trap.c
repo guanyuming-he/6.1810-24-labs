@@ -76,9 +76,37 @@ usertrap(void)
   if(killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2) {
+   	  // lab traps:
+	  // jump to alarm handler if the number of ticks
+	  // has reached the target.
+
+	  // 1. period is not 0 (sigalarm has already ensured
+	  // that handler is valid by checking perm.)
+	  // 2. is not already in handler.
+	  if (
+		p->ticks_period &&
+		(!p->in_handler)
+	  ) {
+		  if (p->ticks_next <= 0)
+		  {
+			p->in_handler = 1;
+			p->ticks_next = p->ticks_period;
+			// call the handler
+			// by setting the sepc to the trap handler
+			// and calling usertrapret.
+			p->trapframe->epc = (uint64)p->al_handler;
+			usertrapret();
+		  }
+		  else 
+		  {
+			--(p->ticks_next);
+		  }
+	  }
+	  
+  	  // give up the CPU if this is a timer interrupt.
+	  yield();
+  }
 
   usertrapret();
 }

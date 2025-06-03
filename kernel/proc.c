@@ -146,6 +146,15 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // lab traps:
+  // start with all ticks 0 and handler 0.
+  p->in_handler = 0;
+  p->ticks_period = 0;
+  p->ticks_next = 0;
+  p->al_handler = 0;
+  // I don't know if they should be copied when forked,
+  // but for now I do not do that.
+
   return p;
 }
 
@@ -692,4 +701,42 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+alarm(int ticks, void (*handler)())
+{
+	struct proc *p = myproc();
+
+	if (ticks < 0) {
+		printf("sigalarm: ticks < 0.\n");
+		return -1;
+	}
+	// handler might really have addr = 0.
+	//else if (ticks > 0 && handler == 0) {
+	//	printf("sigalarm: invalid handler but tick != 0.\n");
+	//	return -1;
+	//}
+	else if (ticks != 0) {
+		// need to check if handler is within the proc pgtbl.
+		pte_t* handler_pte;
+		if ((handler_pte = walk(p->pagetable, (uint64)handler, 0)) == 0) {
+			printf("sigalarm: handler out of pgtbl\n");
+			return -1;
+		}
+		// permissions of a typical text area.
+		uint64 perm = PTE_U | PTE_R | PTE_X | PTE_V;
+		if ((*handler_pte & (perm)) != (perm)) {
+			printf("sigalarm: handler access right incorrect.\n");
+			return -1;
+		}
+	}
+
+	acquire(&p->lock);
+	p->ticks_period = ticks;
+	p->ticks_next = ticks;
+	p->al_handler = handler;
+	release(&p->lock);
+
+	return 0;
 }

@@ -97,3 +97,23 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// lab traps
+uint64
+sys_sigalarm(void)
+{
+	int ticks;
+	uint64 handler;
+
+	argint(0, &ticks);
+	argaddr(1, &handler);
+	
+	// now, we can modify the proc struct.
+	return alarm(ticks, (void*)handler);
+}
+
+uint64 
+sys_sigreturn(void)
+{
+	return 0;
+}

@@ -104,4 +104,13 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // lab traps
+  int in_handler;			   // If already in handler or not.
+  int ticks_period;			   // How many ticks between each alarm.
+  int ticks_next;			   // How many ticks until the text alarm.
+  void *al_handler;		   	   // Alarm handler, in the proc's pgtbl.
+
 };
+
+

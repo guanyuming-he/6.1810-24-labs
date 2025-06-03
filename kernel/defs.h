@@ -107,6 +107,13 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+/**
+ * modify the proc struct 
+ * to update the fields.
+ * sys_sigalarm is the only function calling it.
+ */
+int
+alarm(int ticks, void (*handler)());
 
 // swtch.S
 void            swtch(struct context*, struct context*);
