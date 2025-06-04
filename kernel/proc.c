@@ -740,3 +740,40 @@ alarm(int ticks, void (*handler)())
 
 	return 0;
 }
+
+uint64
+alarm_ret()
+{
+	struct proc *p = myproc();
+	if (!p->in_handler) {
+		printf("sigreturn: not inside handler.\n");
+		return -1;
+	}
+
+	// A few things have happened since the timer interrupt that
+	// caused the alarm:
+	// 1. Timer interrupt causes execution to go into uservec,
+	// which saves the environment in p->trapframe.
+	// 2. Alarm handling in trap.c causes execution to return to
+	// the user's handler function, with the environment saved in trapframe.
+	// 3. Inside the handler function, the environment is modified and will be
+	// different from when the function was called. When the handler calls
+	// sigreturn(), the newly saved p->trapframe will be different from the
+	// first saved p->trapframe.
+	// 4. The goal here is to restore the execution environment back to the
+	// first saved p->trapframe.
+	// They are saved as p->trapframe->a_xxx
+	memmove(
+		&(p->trapframe->epc), 
+		&(p->trapframe->a_epc), 
+		280-24
+	);
+	// don't forget to reset this.
+	p->in_handler = 0;
+	
+	// one problem is that,
+	// a0 will be set to this return value in syscall(),
+	// but the program should have the previous a0.
+	// Thus, return the previous a0.
+	return p->trapframe->a_a0;
+}

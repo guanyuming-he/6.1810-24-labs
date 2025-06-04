@@ -115,5 +115,5 @@ sys_sigalarm(void)
 uint64 
 sys_sigreturn(void)
 {
-	return 0;
+	return alarm_ret();
 }

@@ -92,6 +92,15 @@ usertrap(void)
 		  {
 			p->in_handler = 1;
 			p->ticks_next = p->ticks_period;
+			
+			// copy p->trampframe's saved env 
+			// so that later sigreturn can restore them.
+			memmove(
+				&(p->trapframe->a_epc),
+				&(p->trapframe->epc),
+				280-24
+			);
+
 			// call the handler
 			// by setting the sepc to the trap handler
 			// and calling usertrapret.

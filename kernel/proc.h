@@ -77,6 +77,43 @@ struct trapframe {
   /* 264 */ uint64 t4;
   /* 272 */ uint64 t5;
   /* 280 */ uint64 t6;
+
+  // lab traps: save more data here.
+  // Trapframe is one page (4K bytes),
+  // and can definitely contain more.
+  /* 288 */ uint64 a_epc;           
+  /*  */ uint64 a_kernel_hartid; // not used, but pads here for memcpy.
+  /*  */ uint64 a_ra;
+  /*  */ uint64 a_sp;
+  /*  */ uint64 a_gp;
+  /*  */ uint64 a_tp;
+  /*  */ uint64 a_t0;
+  /*  */ uint64 a_t1;
+  /*  */ uint64 a_t2;
+  /*  */ uint64 a_s0;
+  /*  */ uint64 a_s1;
+  /*  */ uint64 a_a0;
+  /*  */ uint64 a_a1;
+  /*  */ uint64 a_a2;
+  /*  */ uint64 a_a3;
+  /*  */ uint64 a_a4;
+  /*  */ uint64 a_a5;
+  /*  */ uint64 a_a6;
+  /*  */ uint64 a_a7;
+  /*  */ uint64 a_s2;
+  /*  */ uint64 a_s3;
+  /*  */ uint64 a_s4;
+  /*  */ uint64 a_s5;
+  /*  */ uint64 a_s6;
+  /*  */ uint64 a_s7;
+  /*  */ uint64 a_s8;
+  /*  */ uint64 a_s9;
+  /*  */ uint64 a_s10;
+  /*  */ uint64 a_s11;
+  /*  */ uint64 a_t3;
+  /*  */ uint64 a_t4;
+  /*  */ uint64 a_t5;
+  /* 288+280-24 */ uint64 a_t6;
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -90,7 +127,7 @@ struct proc {
   void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
-  int pid;                     // Process ID
+  int pid;                     // Prvoid *ocess ID
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process

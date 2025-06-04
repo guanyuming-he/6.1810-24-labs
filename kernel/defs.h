@@ -112,8 +112,10 @@ void            procdump(void);
  * to update the fields.
  * sys_sigalarm is the only function calling it.
  */
-int
-alarm(int ticks, void (*handler)());
+int				alarm(int ticks, void (*handler)());
+// User will call sigreturn to signal that alarm will return,
+// which will call this function.
+uint64			alarm_ret();
 
 // swtch.S
 void            swtch(struct context*, struct context*);
