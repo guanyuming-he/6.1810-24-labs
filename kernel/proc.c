@@ -693,3 +693,47 @@ procdump(void)
     printf("\n");
   }
 }
+
+/**
+ * lab cow:
+ * Called when a cow pte is written.
+ * 
+  From ../my_attack_plan
+    - ... allocate a new physical page for the offending process and
+      copy the previous content to the new page. Set W in its PTE, clear its
+      software reserved bit, and call decref on the original page.
+*/
+int cow_page(pte_t* pte)
+{
+  void* mem = kalloc();    
+
+  // 1. alloc new physical pg
+  if (!mem)
+  {
+    printf("not enough memory for COW process\n");
+    return -1;
+  }
+  else
+  {
+    // 2. copy old content to new pg
+    uint64 old_pa = PTE2PA(*pte);
+    memmove(mem, (const void*)old_pa, PGSIZE);
+
+    // 3. Set W and clear PTE_COW.
+    int pte_perm = PTE_FLAGS(*pte);
+    if (!(pte_perm & PTE_COW))
+      panic("cow_page called on pte not having COW.");
+    if (pte_perm & PTE_X)
+      panic("debug: pte has W and X??");
+    if (pte_perm & PTE_W)
+      panic("lab cow: pte should not have W here.");
+    pte_perm |= PTE_W;
+    pte_perm &= ~PTE_COW;
+    *pte = PA2PTE(mem) | pte_perm;
+
+    // 4. decref old_pa
+    decref(old_pa);
+  }
+
+  return 0;
+}

@@ -191,8 +191,15 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
+      /** From ../my_attack_plan
+      - Iterate through its pagetable. 
+      - Calls decref if it has software reserved bit. Otherwise, calls kfree.
+      */
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if( (*pte & PTE_COW) )
+        decref(pa);
+      else
+        kfree((void*)pa);
     }
     *pte = 0;
   }
@@ -305,8 +312,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 
 // Given a parent process's page table, copy
 // its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
+// Copies the pagetable but makes all writable pages cow.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
 int
@@ -315,20 +321,50 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //lab cow: don't allocate physical page here.
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+
+/** From ../my_attack_plan:
+    - Iterate through the parent's page table to find all valid (PTE & V)
+      entries.
+    - For each of those, if (PTE & W), then clear W and sets its software
+      reserved bit. Also, call incref(paddr) twice as the ref count has to 
+      go from 0 to 2.
+    - Hey, what if the parent is also forked, and those initially writable page
+      are not marked with W anymore? Do we need to handle this case? It turns
+      out that we partially need to. For the page entry we need to do nothing
+      as the page table is copied. But we have to call incref(paddr)
+      nevertheless.
+    - Copy the parent's page table to the child.
+*/
     pa = PTE2PA(*pte);
+
+    if( (*pte & PTE_W) )
+    {
+      *pte &= ~PTE_W;
+      // note that the refcount has to be increase here
+      // since a page holding PTE_W must have refcount = 0.
+      // some sanity checks first.
+      if (*pte & PTE_COW)
+        panic("cow: W and COW at the same time.");
+      incref(pa);
+      *pte |= PTE_COW;
+    }
+    // Whether COW was set on the parents before
+    // or just set above, call incref(pa);
+    if( (*pte & PTE_COW) )
+      incref(pa);
+
+    // Do not allocate memory at all here.
+    // Instead, map the parent's physical page to the child's.
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
   }
@@ -352,6 +388,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -366,9 +403,23 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+    // lab cow: why do we have to modify here?
+    // Because copyout checks for PTE_W before writing, and thus
+    // a pagefault will not trigger as it would in user mode.
+    // Moreover, even if it did trigger, it would go into kerneltrap,
+    // not usertrap.
+    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
+    else if((*pte & PTE_W) == 0)
+    {
+      // trigger cow if the bit is set
+      if(!(*pte & PTE_COW))
+      { 
+        return -1;
+      }
+      if (0 != cow_page(pte))
+        return -1;
+    }
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)

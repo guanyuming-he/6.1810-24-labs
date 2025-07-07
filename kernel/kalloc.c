@@ -11,8 +11,37 @@
 
 void freerange(void *pa_start, void *pa_end);
 
+// Guany: lab cow:
+// See ../my_attack_plan for my idea on implementing COW.
+// Use char for ref count since NPROC=64.
+unsigned char prefcounts[(PHYSTOP-KERNBASE)/PGSIZE];
+#define REFCOUNT(paddr) prefcounts[(paddr-KERNBASE)/PGSIZE]
+
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
+
+/**
+ * Initializes all references counts to zero.
+ */
+void
+initrefs()
+{
+  memset(prefcounts, 0, sizeof(prefcounts));
+}
+
+void incref(uint64 paddr)
+{
+  ++REFCOUNT(paddr);
+}
+
+void decref(uint64 paddr)
+{
+  if (0 == REFCOUNT(paddr))
+    panic("COW pages cannot have refcount = 0.");
+
+  if(0 == --REFCOUNT(paddr))
+    kfree((void*)paddr);
+}
 
 struct run {
   struct run *next;
@@ -27,6 +56,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initrefs();
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -50,6 +80,10 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // Guany: add sanity check here:
+  if(0 != REFCOUNT((uint64)pa))
+    panic("kfree on refcount != 0.");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);

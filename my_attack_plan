@@ -1,0 +1,97 @@
+Two possible ways to implement reference tracking of a physical page in COW:
+- use a shared_ptr, which is a pointer to a control block containing the ref
+  count and other info.
+- store the ref counts directly in each process's struct.
+
+1. This shared_ptr plan vs storing ref count in each process. If we store the
+ref count in each process, then when we have to change a count, we have to
+somehow find all the other count-1 processes and update them accordingly.
+On the other hand, if we use the shared_ptr, then we have to have a lock and
+somewhere to store the control block. Moreover, we have to free the memory of
+the control block when the last ref is gone.
+2. Looking closer: check all processes that share a physical page isn't hard in
+concept: just loop over all processes and check if each has a ref count for it.
+But this is expensive. A faster idea would be, for each page that is referred
+by multiple, store a list of the processes referring to it. This method, then,
+faces the same difficulty as the control block: where to store such a list? how
+to ensure the correctness of concurrent access to it?
+3. Finding somewhere to store dynamic content, be it control blocks or process
+lists, is hard. One has to dynamically allocate and free physical pages for
+them. Moreover, fragmentation is a big problem. 
+4, Going back to storing ref counts in each process: how do we know which ref
+count is for which physical page? A direct thought is to, like the lab hinted,
+use an array where each index equals vaddr/4096. But how large should the array
+be? This setting of xv6 has 128M of physical mem. Suppose a process can freely
+use all of them (in reality this should always be less, but we don't know how
+much), then we have at most 128*1024/4 = 32768 number of pages, requiring
+32768*4 / 1024 = 128KB of memory to store. But storing less would make a
+process impossible to have all the memory, a limitation we do not want to
+impose.
+
+Another issue is how a process distinguishes COW pages from original read-only
+pages. For that purpose, I will choose the easy path as suggested in the lab:
+use the software reserved bit in each PTE.
+
+On second thought, the ref counts don't have to be stored in each process, but
+statically as kernel data, for all physical pages. Thus, we just have a
+constant 128KB more memory usage (less if I use a smaller integer instead of
+int to store the ref count), and constant overhead in kalloc/kfree where
+ref count check has to be added.
+
+OK. Let's dive deep into the idea that seems good for now.
+Basic set up: a global static array of unsigned refcounts, where all are
+initially set to 0. 0 marks for not shared pages or freed pages, while > 0
+marks for cow shared pages.
+
+Three additional functions:
+initrefs(refcounts)
+    memset(refcounts, sizeof(refcounts)*sizeof(refcount), 0);
+
+// called only when a process is forked.
+incref(paddr)
+    // = 0 means it was free. > 0 means it was already shared.
+    // both are allowed.
+    ++refcount;
+
+decref(paddr):
+    If recount == 0, kernel panic("cow pages cannot have ref = 0.")
+    Otherwise, --refcount.
+    if recount == 0, kfree(paddr).
+
+And a helper macro:
+#define REFCOUNT(paddr) prefcounts[(paddr-PHYSTOP)/PGSIZE]
+
+1. What will happen when a process is forked (the only way for shared physical
+pages to occur; or the constructor of such a situation, where the invariant
+must be maintained).
+    - Iterate through the parent's page table to find all valid (PTE & V)
+      entries.
+    - For each of those, if (PTE & W), then clear W and sets its software
+      reserved bit. Also, call incref(paddr) twice as its ref count has to go
+      from 0 to 2.
+    - Hey, what if the parent is also forked, and those initially writable page
+      are not marked with W anymore? Do we need to handle this case? It turns
+      out that we partially need to. For the page entry we need to do nothing
+      as the page table is copied. But we have to call incref(paddr)
+      nevertheless.
+    - Copy the parent's page table to the child.
+
+2. What will happen when a page fault happens in a user process?
+    - Find out what caused it. If it is not write on non-writable page, kill
+      the process.
+    - If it's write on non-writable page, but its software reserved bit is not
+      set, kill the process. To be safe, we could have a check here: if the bit
+      is not set but refcount != 0, kernel panic("not shared page should have 0
+      as ref count").
+    - Otherwise, allocate a new physical page for the offending process and
+      copy the previous content to the new page. Set W in its PTE, clear its
+      software reserved bit, and call decref on the original page.
+
+3. What happens when a process is done or killed?
+    - Iterate through its pagetable. 
+    - Calls decref if it has software reserved bit. Otherwise, calls kfree.
+
+4. What if any process asks for more memory? Well, it has nothing to do with
+COW. just process normally.
+
+These are all the cases where I can think of COW happens.

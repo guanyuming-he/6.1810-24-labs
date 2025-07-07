@@ -65,9 +65,28 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } 
+  else if(r_scause() == 15) // Store/AMO page fault
+  {  
+    pte_t *pte;
+
+    // Privileged manual: If stval is written with a nonzero value when a
+    // breakpoint, address-misaligned, access-fault, or page-fault exception
+    // occurs on an instruction fetch, load, or store, then stval will contain
+    // the faulting virtual address.
+    pte = walk(p->pagetable, r_stval(), 0);
+    if ( *pte && (*pte & PTE_V) && (*pte & PTE_COW) )
+    {
+      if(0 != cow_page(pte))
+        setkilled(p);
+    }
+    else // write on non-cow page. 
+      goto fault;
+  }
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
+fault:
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
