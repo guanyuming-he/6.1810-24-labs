@@ -321,8 +321,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  //lab cow: don't allocate physical page here.
-  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -344,26 +342,52 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     - Copy the parent's page table to the child.
 */
     pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte);
 
-    if( (*pte & PTE_W) )
+    // don't cow non-user writable pages.
+    if ( !(*pte & PTE_U) && (*pte & PTE_W) )
     {
+      if (REFCOUNT(pa) != 0)
+        panic("ref not 0 when not COWed");
+
+      // Just normally allocate and copy. 
+      void *mem = kalloc();
+      if (!mem)
+        goto err;
+      memmove(mem, (char*)pa, PGSIZE);
+      if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+        kfree(mem);
+        goto err;
+      }
+      continue;
+    }
+
+    // Now it's U, we can safely do COW.
+    // Whether W or not, if not COW already, then incref and cow.
+    // Then, incref all again (so that not already COWed can have ref = 2 after
+    // this).
+    if( !(*pte & PTE_COW) )
+    {
+      if (REFCOUNT(pa) != 0)
+        panic("ref not 0 when not COWed");
+
+      // strip out of W if it has it.
       *pte &= ~PTE_W;
       // note that the refcount has to be increase here
-      // since a page holding PTE_W must have refcount = 0.
-      // some sanity checks first.
-      if (*pte & PTE_COW)
-        panic("cow: W and COW at the same time.");
+      // since a page not holding PTE_W must have refcount = 0.
       incref(pa);
       *pte |= PTE_COW;
     }
-    // Whether COW was set on the parents before
-    // or just set above, call incref(pa);
-    if( (*pte & PTE_COW) )
-      incref(pa);
 
-    // Do not allocate memory at all here.
-    // Instead, map the parent's physical page to the child's.
+    // Call incref here again as all here must have PTE_COW.
+    if ( !(*pte & PTE_COW) )
+        panic("All that have reached here must be ref counted.");
+    incref(pa);
+
+    // recalculate the flags.
     flags = PTE_FLAGS(*pte);
+    // Do not allocate memory here.
+    // Instead, map the parent's physical page to the child's.
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
@@ -499,4 +523,67 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+
+// Copied from my solution to lab pgtbl to help me debug.
+// @param pagetable physical address of the pagetable
+void
+vmprint(pagetable_t pagetable) {
+	// format:
+	// Define entry_line :=
+	// <vm start for this entry>: pte <pte value> pa <physical address>
+	//
+	// page table: <table pa>
+	//
+	// For each level 2 entry:
+	// SPACE ..entry_line
+	// 	 For each level 1 entry:
+	// 	 SPACE .. ..entry_line
+	// 	 	For each level 0 entry:
+	// 	 	SPACE .. .. ..entry_line
+	
+    printf("page table %p\n", (void*)pagetable);
+	// for each level 2 entry.
+	// The range for user space vm is 0 -- MAXVA.
+	for (uint64 va2 = 0; va2 < MAXVA; va2 += 0x40000000L) // += 1GB
+	{
+		pte_t *pte2 = &pagetable[PX(2, va2)];
+
+		if(*pte2 & PTE_V)
+		// exists
+		{
+			pagetable_t pt1 = (pagetable_t)PTE2PA(*pte2);
+			printf(" ..%p: pte %p pa %p\n", (void*)va2, (void*)pte2, (void*)pt1);
+			// for each level 1 entry.
+			for (uint64 off1 = 0; off1 < 0x40000000L; off1 += 0x200000L) // += 2MB
+			{
+				uint64 va1 = va2 + off1;
+				pte_t *pte1 = &pt1[PX(1, va1)];
+
+				if(*pte1 & PTE_V)
+				// exists
+				{
+					pagetable_t pt0 = (pagetable_t)PTE2PA(*pte1);
+					printf(" .. ..%p: pte %p pa %p\n", (void*)va1, (void*)pte1, (void*)pt0);
+					// for each level 0 entry.
+					for (uint64 off0 = 0; off0 < 0x200000L; off0 += 0x1000L) // 2KB
+					{
+						uint64 va0 = va1 + off0;
+						pte_t *pte0 = &pt0[PX(0, va0)];
+						if (*pte0 & PTE_V)
+						{
+							uint64 pa = PTE2PA(*pte0);
+							printf
+							(
+									" .. .. ..%p: pte %p pa %p\n", 
+									(void*)va0, (void*)pte0, (void*)pa
+							);
+						}
+					}
+				}
+			}
+		}
+
+	}		
 }

@@ -23,7 +23,7 @@ simpletest()
     exit(-1);
   }
 
-  printf("after sbrk 1.\n");
+  //printf("after sbrk 1.\n");
 
   for(char *q = p; q < p + sz; q += 4096){
     *(int*)q = getpid();
@@ -37,15 +37,15 @@ simpletest()
 
   if(pid == 0)
   {
-    printf("child : after fork.\n");
+    //printf("child : after fork.\n");
     exit(0);
   }
 
-  printf("parent : after fork.\n");
+  //printf("parent : after fork.\n");
 
   wait(0);
 
-  printf("after wait.\n");
+  //printf("after wait.\n");
 
   if(sbrk(-sz) == (char*)0xffffffffffffffffL){
     printf("sbrk(-%d) failed\n", sz);

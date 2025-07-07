@@ -296,6 +296,12 @@ fork(void)
   }
   np->sz = p->sz;
 
+  //printf("Debug: fork: after uvmcopy\n");
+  //printf("----------- OLD ---------\n");
+  //vmprint(p->pagetable);
+  //printf("----------- NEW ---------\n");
+  //vmprint(np->pagetable);
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -721,6 +727,8 @@ int cow_page(pte_t* pte)
 
     // 3. Set W and clear PTE_COW.
     int pte_perm = PTE_FLAGS(*pte);
+    if (!(pte_perm & PTE_U))
+      panic("cow_page called on non-U page.");
     if (!(pte_perm & PTE_COW))
       panic("cow_page called on pte not having COW.");
     if (pte_perm & PTE_X)

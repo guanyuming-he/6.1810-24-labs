@@ -15,7 +15,6 @@ void freerange(void *pa_start, void *pa_end);
 // See ../my_attack_plan for my idea on implementing COW.
 // Use char for ref count since NPROC=64.
 unsigned char prefcounts[(PHYSTOP-KERNBASE)/PGSIZE];
-#define REFCOUNT(paddr) prefcounts[(paddr-KERNBASE)/PGSIZE]
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -31,11 +30,14 @@ initrefs()
 
 void incref(uint64 paddr)
 {
+  //printf("incref on %p\n", (void*)paddr);
   ++REFCOUNT(paddr);
 }
 
 void decref(uint64 paddr)
 {
+  //printf("decref on %p\n", (void*)paddr);
+
   if (0 == REFCOUNT(paddr))
     panic("COW pages cannot have refcount = 0.");
 
