@@ -111,6 +111,10 @@ kalloc(void)
   release(&kmem.lock);
 
   if(r)
+  {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    if (REFCOUNT((uint64)r) != 0)
+      panic("free page's ref count is not 0.");
+  }
   return (void*)r;
 }
