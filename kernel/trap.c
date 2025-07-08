@@ -74,6 +74,14 @@ usertrap(void)
     // breakpoint, address-misaligned, access-fault, or page-fault exception
     // occurs on an instruction fetch, load, or store, then stval will contain
     // the faulting virtual address.
+    
+    // Before simply walking into stval(),
+    // check if it's valid.
+    // This bug is found by MAXVAplus usertest.
+    uint64 stval = r_stval();
+    if (stval >= p->sz) // p is not allowed to access beyond sz.
+      goto fault;
+
     pte = walk(p->pagetable, r_stval(), 0);
     if ( *pte && (*pte & PTE_V) && (*pte & PTE_COW) )
     {

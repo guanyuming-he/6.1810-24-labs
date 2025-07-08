@@ -41,7 +41,13 @@ ref count check has to be added.
 OK. Let's dive deep into the idea that seems good for now.
 Basic set up: a global static array of unsigned refcounts, where all are
 initially set to 0. 0 marks for not shared pages or freed pages, while > 0
-marks for cow shared pages.
+marks for shared pages. 
+
+It later occurred to me that, more pages than those are COW can be shared. We
+could certainly share read-only pages. To share more than COW pages, only one
+bit of indicating COW or not is not enough. Fortunately, it so happens that
+risc-v provides 2 bits of RSW, which we can take advantage of. I designate bit
+8 as PTE_COW and bit 9 as PTE_SHARED. Bit 8 must imply bit 9, obviously.
 
 Three additional functions:
 initrefs(refcounts)
@@ -54,7 +60,7 @@ incref(paddr)
     ++refcount;
 
 decref(paddr):
-    If recount == 0, kernel panic("cow pages cannot have ref = 0.")
+    If recount == 0, kernel panic("shared pages cannot have ref = 0.")
     Otherwise, --refcount.
     if recount == 0, kfree(paddr).
 
@@ -65,15 +71,26 @@ And a helper macro:
 pages to occur; or the constructor of such a situation, where the invariant
 must be maintained).
     - Iterate through the parent's page table to find all valid (PTE & V)
-      entries.
-    - For each of those, if (PTE & W), then clear W and sets its software
-      reserved bit. Also, call incref(paddr) twice as its ref count has to go
-      from 0 to 2.
-    - Hey, what if the parent is also forked, and those initially writable page
-      are not marked with W anymore? Do we need to handle this case? It turns
-      out that we partially need to. For the page entry we need to do nothing
-      as the page table is copied. But we have to call incref(paddr)
-      nevertheless.
+      entries. Whenever we fork a process, we aim to share all of its pages
+      (except the trampframe, which is written to by the kernel, and the
+      trampoline, which is by default shared read-only, and managed by the
+      kernel).
+
+      Fortunately, in uvmcopy, the loop is going until sz, which does not cover
+      the trampoline and trapframe. So we don't need special logic to detect
+      them.
+
+    - Because we aim to share all of them, we check if they are already shared
+      (bit 9 set). If so, we simply incref.
+      
+      Otherwise,
+      + If not PTE_U, then there can only be one such page <= sz: the stack
+      guard. Just copy it normally. I haven't figured it out completely, but it
+      would seem that it may be written to somewhere else, which
+      would cause a disaster if I mark it as COW.
+      + If PTE_U, then set PTE_SHARED, and incref by 2 (from 0 to 2).
+      + If additionally PTE_W, then clear W and set PTE_COW.
+
     - Copy the parent's page table to the child.
 
 2. What will happen when a page fault happens in a user process?
@@ -85,13 +102,31 @@ must be maintained).
       as ref count").
     - Otherwise, allocate a new physical page for the offending process and
       copy the previous content to the new page. Set W in its PTE, clear its
-      software reserved bit, and call decref on the original page.
+      software reserved bits, and call decref on the original page. This
+      procedure is encapsulated in proc.c:cow_page().
+    - Note that there's also another place where a COW page may be written to:
+      the kernel's copyout(). It simply checks for PTE_U and PTE_W, and if not,
+      it will not write. Thus, we have to call cow_page() there, too.
+
+      We cannot discard its check, because even if an exception happens there,
+      it goes into kerneltrap, not usertrap.
 
 3. What happens when a process is done or killed?
-    - Iterate through its pagetable. 
-    - Calls decref if it has software reserved bit. Otherwise, calls kfree.
+    - Iterate through its pagetable for all valid leaf PTEs. 
+    - Calls decref if it has PTE_SHARED bit. Otherwise, calls kfree.
 
 4. What if any process asks for more memory? Well, it has nothing to do with
 COW. just process normally.
 
 These are all the cases where I can think of COW happens.
+Where is 1? Thankfully, only in uvmcopy, which is called by fork.
+Where is 2? Two places: scause == 15 page exception, and copyout in vm.c.
+Note here, thanks to usertests MAXVAplus, I found a bug: I must check stval
+before walking into it.
+Where is 3? Thankfully, only in uvmunmap, which is always called to free a
+process's pages.
+
+Finally, I will need a lock: 
+It is tempting not to, since a page fault interrupts the same core. However,
+two processes sharing the same page might be running on different cores and
+might execute cow_page at the same time.

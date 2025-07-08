@@ -196,10 +196,14 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       - Calls decref if it has software reserved bit. Otherwise, calls kfree.
       */
       uint64 pa = PTE2PA(*pte);
-      if( (*pte & PTE_COW) )
+      if( (*pte & PTE_SHARED) )
         decref(pa);
-      else
+      else 
+      {
+        if ( *pte & PTE_COW )
+          panic("Not shared but COW.");
         kfree((void*)pa);
+      }
     }
     *pte = 0;
   }
@@ -330,25 +334,46 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
 /** From ../my_attack_plan:
     - Iterate through the parent's page table to find all valid (PTE & V)
-      entries.
-    - For each of those, if (PTE & W), then clear W and sets its software
-      reserved bit. Also, call incref(paddr) twice as the ref count has to 
-      go from 0 to 2.
-    - Hey, what if the parent is also forked, and those initially writable page
-      are not marked with W anymore? Do we need to handle this case? It turns
-      out that we partially need to. For the page entry we need to do nothing
-      as the page table is copied. But we have to call incref(paddr)
-      nevertheless.
+      entries. Whenever we fork a process, we aim to share all of its pages
+      (except the trampframe, which is written to by the kernel, and the
+      trampoline, which is by default shared read-only, and managed by the
+      kernel).
+
+      Fortunately, in uvmcopy, the loop is going until sz, which does not cover
+      the trampoline and trapframe. So we don't need special logic to detect
+      them.
+
+    - Because we aim to share all of them, we check if they are already shared
+      (bit 9 set). If so, we simply incref.
+      
+      Otherwise,
+      + If not PTE_U, then there can only be one such page <= sz: the stack
+      guard. Just copy it normally. I haven't figured it out completely, but it
+      would seem that it may be written to somewhere else, which
+      would cause a disaster if I mark it as COW.
+      + If PTE_U, then set PTE_SHARED, and incref by 2 (from 0 to 2).
+      + If additionally PTE_W, then clear W and set PTE_COW.
+
     - Copy the parent's page table to the child.
 */
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 
-    // don't cow non-user writable pages.
-    if ( !(*pte & PTE_U) && (*pte & PTE_W) )
+    // Don't cow non-user writable pages.
+    // Well, at first, I thought it was not needed, as 
+    // the only two pages without U must be the trampoline and trapframe, and 
+    // there can be no other possibilities. 
+    // I was wrong: the stack guard page is the one that is cleared U, yet
+    // whose W remains. 
+    // I still do not understand why marking that COW will cause a big problem,
+    // because one should not try to access that anyway.
+    // Maybe I will try to figure out later.
+    if ( !(*pte & PTE_U) )
     {
-      if (REFCOUNT(pa) != 0)
-        panic("ref not 0 when not COWed");
+      if ( *pte & PTE_SHARED )
+        panic("Do not share !PTE_U pages.");
+      if ( 0 != REFCOUNT(pa) )
+        panic("refcount != 0 for a !PTE_U page.");
 
       // Just normally allocate and copy. 
       void *mem = kalloc();
@@ -363,24 +388,33 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     }
 
     // Now it's U, we can safely do COW.
-    // Whether W or not, if not COW already, then incref and cow.
-    // Then, incref all again (so that not already COWed can have ref = 2 after
-    // this).
-    if( !(*pte & PTE_COW) )
+    // Whether W or not, we aim to share it anyway.
+    // If it's not already shared, then incref twice.
+    if( !(*pte & PTE_SHARED) )
     {
       if (REFCOUNT(pa) != 0)
-        panic("ref not 0 when not COWed");
+        panic("ref not 0 when not shared");
+      if ( *pte & PTE_COW )
+        panic("We must have PTE_COW -> PTE_SHARED.");
 
       // strip out of W if it has it.
-      *pte &= ~PTE_W;
+      // and add COW to it.
+      if (*pte & PTE_W)
+      {
+        *pte &= ~PTE_W;
+        *pte |= PTE_COW;
+      }
+
       // note that the refcount has to be increase here
-      // since a page not holding PTE_W must have refcount = 0.
+      // since the target refcount is 2, not 1.
       incref(pa);
-      *pte |= PTE_COW;
+      
+      // always make it shared.
+      *pte |= PTE_SHARED;
     }
 
     // Call incref here again as all here must have PTE_COW.
-    if ( !(*pte & PTE_COW) )
+    if ( !(*pte & PTE_SHARED) )
         panic("All that have reached here must be ref counted.");
     incref(pa);
 

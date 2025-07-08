@@ -15,6 +15,12 @@ void freerange(void *pa_start, void *pa_end);
 // See ../my_attack_plan for my idea on implementing COW.
 // Use char for ref count since NPROC=64.
 unsigned char prefcounts[(PHYSTOP-KERNBASE)/PGSIZE];
+// Guany:
+// Finally, I will need a lock: 
+// It is tempting not to, since a page fault interrupts the same core. However,
+// two processes sharing the same page might be running on different cores and
+// might execute cow_page at the same time.
+struct spinlock pref_lock;
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -25,24 +31,34 @@ extern char end[]; // first address after kernel.
 void
 initrefs()
 {
+  initlock(&pref_lock, "pageref lock");
+
+  acquire(&pref_lock);
   memset(prefcounts, 0, sizeof(prefcounts));
+  release(&pref_lock);
 }
 
+// Although I expose the REFCOUNT macro,
+// only these two should write to it.
+// All the others are read-only.
 void incref(uint64 paddr)
 {
   //printf("incref on %p\n", (void*)paddr);
+  acquire(&pref_lock);
   ++REFCOUNT(paddr);
+  release(&pref_lock);
 }
-
 void decref(uint64 paddr)
 {
   //printf("decref on %p\n", (void*)paddr);
 
+  acquire(&pref_lock);
   if (0 == REFCOUNT(paddr))
-    panic("COW pages cannot have refcount = 0.");
+    panic("shared pages cannot have refcount = 0.");
 
   if(0 == --REFCOUNT(paddr))
     kfree((void*)paddr);
+  release(&pref_lock);
 }
 
 struct run {

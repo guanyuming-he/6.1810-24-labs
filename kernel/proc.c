@@ -725,18 +725,26 @@ int cow_page(pte_t* pte)
     uint64 old_pa = PTE2PA(*pte);
     memmove(mem, (const void*)old_pa, PGSIZE);
 
-    // 3. Set W and clear PTE_COW.
+    // 3. Set W and clear PTE_COW and PTE_SHARED.
     int pte_perm = PTE_FLAGS(*pte);
     if (!(pte_perm & PTE_U))
       panic("cow_page called on non-U page.");
     if (!(pte_perm & PTE_COW))
       panic("cow_page called on pte not having COW.");
+    if (!(pte_perm & PTE_SHARED))
+      panic("cow_page called on pte not having SHARED.");
+    // Should not happen, as even sbrk gives fixed permission pages R|W for
+    // heap.
     if (pte_perm & PTE_X)
-      panic("debug: pte has W and X??");
+      panic("cow_page: pte has W and X??");
     if (pte_perm & PTE_W)
       panic("lab cow: pte should not have W here.");
+
+    // go back to normal page.
     pte_perm |= PTE_W;
     pte_perm &= ~PTE_COW;
+    pte_perm &= ~PTE_SHARED;
+
     *pte = PA2PTE(mem) | pte_perm;
 
     // 4. decref old_pa

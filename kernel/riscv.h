@@ -363,9 +363,13 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // user can access
 // lab cow:
-// the first reserved for software bit, used to indicate
-// that the physical page is shared for COW.
+// the first bit reserved for software, used to indicate
+// that the physical page is COW.
 #define PTE_COW (1L << 8) 
+// the second bit reserved for software, used to indicate if 
+// the physical page is shared.
+// Note that PTE_COW must imply PTE_SHARED.
+#define PTE_SHARED (1L << 9)
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
