@@ -33,9 +33,9 @@ e1000_init(uint32 *xregs)
   regs = xregs;
 
   // Reset the device
-  regs[E1000_IMS] = 0; // disable interrupts
+  regs[E1000_IMC] = 0xffff; // disable interrupts
   regs[E1000_CTL] |= E1000_CTL_RST;
-  regs[E1000_IMS] = 0; // redisable interrupts
+  regs[E1000_IMC] = 0xffff; // redisable interrupts
   __sync_synchronize();
 
   // [E1000 14.5] Transmit initialization
