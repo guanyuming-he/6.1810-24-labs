@@ -1,0 +1,106 @@
+The first obstacle is to handle the receive & transmit rings/queues.
+The description of them is quite straightforward in the manual: 
+- hardware uses all inside [head, tail) and software uses all the rest.
+- as hardware finishes using (starting from the head) descriptors, it advances
+  the head until head = tail.
+- as software finishes preparing (starting from the tail) descriptors for the
+  hardware, it advances the tail until tail = head-1.
+
+There's no problem with the description; it is true and simple. But what is not
+simple, for software (driver developers), is that there are more states than
+the two, used by hardware, and used by software --- as descriptors are used by
+software, we need more states to manage them. Note that the situation is dual
+for hardware, but we only have to take one side of the responsibility.
+
+For the reception of packets, we need to allocate buffers for them.
+Since we need to allocate the maximum size of buffers, it would be desirable to
+reuse them. However, we have to keep the memory for the upper network stack to
+do things to the packet. So we are presented with two choices: either stall
+until the upper stack has finished using one, which would be a disaster, or
+allocate and copy the memory for the upper stack. In fact, the lab suggests
+allocating a new buffer for the descriptor and pass the memory directly to the
+upper stack, which does not involve a copy. Moreover, the manual indicates
+that, if we want to use in-memory check of descriptors (whose significance will
+be discussed later), we will have to reset the status field of the descriptor.
+
+For the transmission of packets, we need to allocate buffers for ourselves to
+contain the data. For this lab, sys_send() already does that for us.
+Strictly speaking, since all allocation here are of fixed size (via kalloc()),
+we could reuse the buffer. But that would require modifying sys_send(), and
+more importantly, blur the boundary between sys_send() and our driver. And
+anyway, in real world cases where we do allocations of exactly len, we will
+have to free the previous buffer and use a new one. And since we control the
+data we send, we need to fill in the other fields of the descriptor to contain
+metadata about the packet.
+
+To conclude, in both rx & tx, we will have to handle the
+allocation/deallocation of the buffer and a few other things, before we can
+make a descriptor available to the hardware again. 
+
+The situation is complicated further by the fact that the manual states
+``Reading the descriptor head to determine which buffers are finished is not
+reliable.'' (Section 13.4.28 & 13.4.39). At first, it is confusing; if the head
+is not reliable, then how can we use it to determine which descriptors we can
+reuse, especially since the manual also stated that: ``Descriptors passed to
+hardware should not be manipulated by software until the head pointer has
+advanced past them.'' (Section 3.4). After a series of contemplation, I arrived
+at a likely explanation, inspired by this Note: 
+``
+The head pointer points to the next descriptor that is written back. At the
+completion of the descriptor write-back operation, this pointer is incremented
+by the number of descriptors written back. HARDWARE OWNS ALL DESCRIPTORS
+BETWEEN [HEAD AND TAIL]. Any descriptor not in this range is owned by software.
+'' (Section 3.2.6).
+The likely explanation is, ``unreliable'' stands for the fact that head may be
+slower than descriptors are made available to software, since descriptors are
+written in batch, and the hardware doesn't want to write to the bus for every
+descriptor.
+
+Thus, we have an optimization choice: instead of just using all descriptors
+from tail to head-1, we can also check the write-back status of descriptors and
+use past head. Actually, it's what's suggested for us to do in e1000_transmit()
+by the lab; we do that instead of check if head == tail.
+
+The lab actually has simplified things for transmition --- instead of letting
+us dealing with multiple packets at a time, we only need to deal with one
+packet at a time. Still, for reception we have to deal with multiple ones.
+
+Here I give a state machine of the transmission and reception cycles:
+
+transmission:
+-------------
+cleared (C): buf is freed; status not set
+->
+ready for hardware (R): put a packet inside buf and setup status but is not
+	within [head, tail)
+	This should not happen for transmittion, since e1000_transmit() does one 
+	packet at a time. I just put it here for consistency with reception.
+->
+used by hardware (U): when the above descriptor is inside [head, tail)
+-> 
+waiting to be cleared (W): when the above descriptor has DD set. Buf not freed
+	and status not cleared yet.
+-> 
+back to cleared
+
+reception: (in init, every buf is allocated, so there's no unallocated state)
+-------------
+cleared (C): buf is not allocated. This can only happen before init for
+	reception. I just put it here for consistency with transmission.
+->
+ready for hardware (R): buf allocated and status cleared, but is not within
+	[head, tail). After init, only count-1 is in this state.
+->
+used by hardware (U): the above descriptor put into [head, tail).
+	After init, all within [0, count-1) are in this state.
+->
+waiting to be cleared (W): when the above descriptor has DD set. Buf not copied
+	out and status not cleared yet.
+->
+back to ready for hardware
+
+Why after init, count-1 has to be R, not U? Because the ring can contain at
+most count-1 descriptors for hardware; head=tail is treated as an empty ring.
+
+See also the graph in ./desc_rings.svg. There I assume head is perfectly
+syncronized with DD.
