@@ -23,9 +23,9 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
-     inkscape:zoom="1"
-     inkscape:cx="-35"
-     inkscape:cy="350"
+     inkscape:zoom="2"
+     inkscape:cx="331.5"
+     inkscape:cy="274"
      inkscape:window-width="2560"
      inkscape:window-height="1389"
      inkscape:window-x="0"
@@ -739,16 +739,6 @@
          style="fill:#1a1a1a;stroke-width:0.2"
          x="127.33346"
          y="87.355583">T</tspan></text>
-    <path
-       style="fill:#ff0000;fill-opacity:1;stroke:#000000;stroke-width:0.1;stroke-linecap:butt;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
-       d="m 87.563032,92.674018 v -2.315104 h 19.513018 19.51302 v 2.315104 2.315104 H 107.07605 87.563032 Z"
-       id="path143"
-       sodipodi:nodetypes="ccccccccc" />
-    <path
-       style="fill:#ff0000;fill-opacity:1;stroke:#000000;stroke-width:0.1;stroke-linecap:butt;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
-       d="m 87.563032,97.833393 v -2.315104 h 19.513018 19.51302 v 2.315104 2.315107 H 107.07605 87.563032 Z"
-       id="path144"
-       sodipodi:nodetypes="ccccccccc" />
     <text
        xml:space="preserve"
        style="font-size:3.175px;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#1a1a1a;fill-opacity:1;stroke:#000000;stroke-width:0.2;stroke-linecap:butt;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
@@ -977,5 +967,16 @@
        style="fill:#ff0000;fill-opacity:1;stroke:#000000;stroke-width:0.141421;stroke-linecap:butt;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
        d="m 87.357633,119.86885 v -2.43215 h 19.644307 19.64431 v 2.43215 2.43215 H 107.00194 87.357633 Z"
        id="path186" />
+    <text
+       xml:space="preserve"
+       style="font-size:3.175px;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#ff0000;fill-opacity:1;stroke:#000000;stroke-width:0.2;stroke-linecap:butt;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+       x="-32.543751"
+       y="20.691446"
+       id="text186"><tspan
+         sodipodi:role="line"
+         id="tspan186"
+         style="stroke-width:0.2"
+         x="-32.543751"
+         y="20.691446">`</tspan></text>
   </g>
 </svg>

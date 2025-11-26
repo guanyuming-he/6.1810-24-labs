@@ -15,6 +15,10 @@ static char *tx_bufs[TX_RING_SIZE];
 static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 static char *rx_bufs[RX_RING_SIZE];
 
+// If 0 then use head to tell up to which are processed by hardware.
+// If 1 then use DD for that.
+#define USE_DD 0
+
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
@@ -102,9 +106,61 @@ e1000_transmit(char *buf, int len)
   // a pointer so that it can be freed after send completes.
   //
 
+  // minimum possible ethernet frame size, with all the 
+  // IP, ARP, UDP etc. headers.
+  if (len < 48)
+	  panic("e1000 tx buf too small!");
+  // maximum set by the E1000 manual.
+  if (len > 16288)
+	  panic("e1000 tx buf too large!");
+
   
-  return 0;
+  // The reason why we use DD instead of head is reduce latency.
+  // See attack_plan.txt
+  acquire(&e1000_lock);
+  struct tx_desc* tail = &tx_ring[regs[E1000_TDT]];
+#if USE_DD
+  if (! (tail->status & E1000_TXD_STAT_DD) )
+#else
+  if (((regs[E1000_TDT]+1)%TX_RING_SIZE) == regs[E1000_TDH])
+#endif
+  {
+    // Tail not ready
+    // Don't spin or sleep. Just return.
+    release(&e1000_lock);
+    return -1;
+  }
+  else // tail ready
+  {
+    // If addr == 0 then not allocated
+    // Otherwise it needs to be freed
+    // with other status cleared
+    if (tail->addr)
+    {
+      kfree((char*)tail->addr);
+      tail->status = 0;
+    }
+    tail->addr = (uint64)buf;
+    tail->length = len;
+    // Require the hardware to report DD.
+    // And indicate that it is the end of a packet (i.e. Ethernet frame).
+    tail->cmd = 
+      E1000_TXD_CMD_RS |
+      E1000_TXD_CMD_EOP;
+
+    // advance tail.
+    regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+    release(&e1000_lock);
+  }
+
+  
+  return 0; 
 }
+
+struct data_len {
+	char* data;
+	int len;
+};
 
 static void
 e1000_recv(void)
@@ -115,6 +171,69 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
   //
+	
+	// It appears that inside net_rx e1000_transmit may be called.
+	// To avoid deadlocking, we do all net_rx outside,
+	// which requires a data structure to store the packets.
+	struct data_len packets[RX_RING_SIZE];
+
+	uint32 num_packets = 0;
+  uint32 i = regs[E1000_TDT];
+  acquire(&e1000_lock);
+#if USE_DD
+  // Check DD in [tail, tail-1]
+  do {
+    struct rx_desc* curr = &rx_ring[i];
+    if ( !(curr->status & E1000_RXD_STAT_DD) )
+      break;
+
+		// create a new buffer for it.
+		packets[num_packets].data = (char*)curr->addr;
+		packets[num_packets].len = curr->length;
+		curr->addr = (uint64)kalloc();
+		if (!curr->addr)
+			panic("e1000 NOMEM");
+		// clear status
+		curr->status = 0;
+    
+    i = (i+1) % RX_RING_SIZE;
+		++num_packets;
+  }
+  while (i != regs[E1000_TDT]);
+
+	if (num_packets != 0)
+		regs[E1000_TDT] = (i-1) % RX_RING_SIZE;
+#else
+  // receive all in [tail, head-1]
+	uint32 head_prev = (regs[E1000_TDH]-1) % RX_RING_SIZE;
+	for (; i != regs[E1000_TDH]; i = (i+1)%RX_RING_SIZE)
+	{
+    struct rx_desc* curr = &rx_ring[i];
+    if ( !(curr->status & E1000_RXD_STAT_DD) )
+			panic("e1000 before RDH but not DD");
+
+		// create a new buffer for it.
+		packets[num_packets].data = (char*)curr->addr;
+		packets[num_packets].len = curr->length;
+		curr->addr = (uint64)kalloc();
+		if (!curr->addr)
+			panic("e1000 NOMEM");
+		// clear status
+		curr->status = 0;
+
+		++num_packets;
+	}
+
+	if (num_packets != 0)
+		regs[E1000_TDT] = head_prev;
+#endif
+  release(&e1000_lock);
+
+	// To avoid deadlocking, we do all net_rx outside,
+	for (uint32 i = 0; i < num_packets; ++i)
+	{
+		net_rx(packets[i].data, packets[i].len);
+	}
 
 }
 
