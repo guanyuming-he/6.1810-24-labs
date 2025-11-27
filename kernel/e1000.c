@@ -15,9 +15,19 @@ static char *tx_bufs[TX_RING_SIZE];
 static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 static char *rx_bufs[RX_RING_SIZE];
 
+#define TX_INC(i) ((i)+1)%TX_RING_SIZE
+#define TX_DEC(i) ((i)-1)%TX_RING_SIZE
+#define RX_INC(i) ((i)+1)%RX_RING_SIZE
+#define RX_DEC(i) ((i)-1)%RX_RING_SIZE
+#define THEAD regs[E1000_TDH]
+#define TTAIL regs[E1000_TDT]
+#define RHEAD regs[E1000_RDH]
+#define RTAIL regs[E1000_RDT]
+
 // If 0 then use head to tell up to which are processed by hardware.
 // If 1 then use DD for that.
-#define USE_DD 0
+#define TX_USE_DD 0
+#define RX_USE_DD 0
 
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
@@ -118,11 +128,11 @@ e1000_transmit(char *buf, int len)
   // The reason why we use DD instead of head is reduce latency.
   // See attack_plan.txt
   acquire(&e1000_lock);
-  struct tx_desc* tail = &tx_ring[regs[E1000_TDT]];
-#if USE_DD
+  struct tx_desc* tail = &tx_ring[TTAIL];
+#if TX_USE_DD
   if (! (tail->status & E1000_TXD_STAT_DD) )
 #else
-  if (((regs[E1000_TDT]+1)%TX_RING_SIZE) == regs[E1000_TDH])
+  if ((TX_INC(TTAIL)) == THEAD)
 #endif
   {
     // Tail not ready
@@ -134,12 +144,11 @@ e1000_transmit(char *buf, int len)
   {
     // If addr == 0 then not allocated
     // Otherwise it needs to be freed
-    // with other status cleared
     if (tail->addr)
     {
       kfree((char*)tail->addr);
-      tail->status = 0;
     }
+    tail->status = 0;
     tail->addr = (uint64)buf;
     tail->length = len;
     // Require the hardware to report DD.
@@ -149,7 +158,7 @@ e1000_transmit(char *buf, int len)
       E1000_TXD_CMD_EOP;
 
     // advance tail.
-    regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+    TTAIL = TX_INC(TTAIL);
     release(&e1000_lock);
   }
 
@@ -178,54 +187,55 @@ e1000_recv(void)
 	struct data_len packets[RX_RING_SIZE];
 
 	uint32 num_packets = 0;
-  uint32 i = regs[E1000_TDT];
+  // Since the max size is count-1, we need to look after tail.
+  // See attack_plan.txt for elaboration.
+  uint32 i = RX_INC(RTAIL);
   acquire(&e1000_lock);
-#if USE_DD
+#if RX_USE_DD
   // Check DD in [tail, tail-1]
   do {
-    struct rx_desc* curr = &rx_ring[i];
-    if ( !(curr->status & E1000_RXD_STAT_DD) )
+    struct rx_desc* next = &rx_ring[i];
+    if ( !(next->status & E1000_RXD_STAT_DD) )
       break;
 
 		// create a new buffer for it.
-		packets[num_packets].data = (char*)curr->addr;
-		packets[num_packets].len = curr->length;
-		curr->addr = (uint64)kalloc();
-		if (!curr->addr)
+		packets[num_packets].data = (char*)next->addr;
+		packets[num_packets].len = next->length;
+		next->addr = (uint64)kalloc();
+		if (!next->addr)
 			panic("e1000 NOMEM");
 		// clear status
-		curr->status = 0;
+		next->status = 0;
     
-    i = (i+1) % RX_RING_SIZE;
+    i = RX_INC(i);
 		++num_packets;
   }
-  while (i != regs[E1000_TDT]);
+  while (i != RTAIL);
 
 	if (num_packets != 0)
-		regs[E1000_TDT] = (i-1) % RX_RING_SIZE;
+		RTAIL = RX_DEC(i);
 #else
-  // receive all in [tail, head-1]
-	uint32 head_prev = (regs[E1000_TDH]-1) % RX_RING_SIZE;
-	for (; i != regs[E1000_TDH]; i = (i+1)%RX_RING_SIZE)
+  // receive all in [tail+1, head-1]
+	for (; i != RHEAD; i = RX_INC(i))
 	{
-    struct rx_desc* curr = &rx_ring[i];
-    if ( !(curr->status & E1000_RXD_STAT_DD) )
+    struct rx_desc* next = &rx_ring[i];
+    if ( !(next->status & E1000_RXD_STAT_DD) )
 			panic("e1000 before RDH but not DD");
 
 		// create a new buffer for it.
-		packets[num_packets].data = (char*)curr->addr;
-		packets[num_packets].len = curr->length;
-		curr->addr = (uint64)kalloc();
-		if (!curr->addr)
+		packets[num_packets].data = (char*)next->addr;
+		packets[num_packets].len = next->length;
+		next->addr = (uint64)kalloc();
+		if (!next->addr)
 			panic("e1000 NOMEM");
 		// clear status
-		curr->status = 0;
+		next->status = 0;
 
 		++num_packets;
 	}
 
 	if (num_packets != 0)
-		regs[E1000_TDT] = head_prev;
+		RTAIL = RX_DEC(i);
 #endif
   release(&e1000_lock);
 
