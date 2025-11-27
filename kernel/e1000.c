@@ -118,11 +118,11 @@ e1000_transmit(char *buf, int len)
 
   // minimum possible ethernet frame size, with all the 
   // IP, ARP, UDP etc. headers.
-  if (len < 48)
-	  panic("e1000 tx buf too small!");
-  // maximum set by the E1000 manual.
-  if (len > 16288)
-	  panic("e1000 tx buf too large!");
+  // if (len < 48)
+	//   panic("e1000 tx buf too small!");
+  // // maximum set by the E1000 manual.
+  // if (len > 16288)
+	//   panic("e1000 tx buf too large!");
 
   
   // The reason why we use DD instead of head is reduce latency.
