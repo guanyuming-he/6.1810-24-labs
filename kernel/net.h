@@ -157,7 +157,7 @@ void udp_cache_produce(
 );
 
 #define UCACHE_INC(i) ((i)+1)%(MAX_NUM_CACHED_PACKETS+1)
-#define UCACHE_DEC(i) ((i)+1)%(MAX_NUM_CACHED_PACKETS+1)
+#define UCACHE_DEC(i) ((i)-1)%(MAX_NUM_CACHED_PACKETS+1)
 
 struct port_binding {
 	// if null then not used.

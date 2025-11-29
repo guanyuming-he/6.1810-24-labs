@@ -108,6 +108,7 @@ rx(char *name)
     ok += 1;
   }
 
+	unbind(2000);
   printf("%s: OK\n", name);
 
   return 1;
@@ -217,6 +218,8 @@ rx2()
     }
   }
 
+	unbind(2000);
+	unbind(2001);
   printf("rx2: OK\n");
 
   return 1;
@@ -297,6 +300,7 @@ ping0()
     return 0;
   }
 
+	unbind(2004);
   printf("ping0: OK\n");
 
   return 1;
@@ -357,6 +361,7 @@ ping1()
     }
   }
 
+	unbind(2005);
   printf("ping1: OK\n");
 
   return 1;
@@ -434,6 +439,8 @@ ping2()
     }
   }
 
+	unbind(2006);
+	unbind(2007);
   printf("ping2: OK\n");
 
   return 1;
@@ -594,6 +601,8 @@ ping3()
     return 0;
   }
 
+	unbind(2008);
+	unbind(2009);
   printf("ping3: OK\n");
 
   return 1;
@@ -806,6 +815,7 @@ dns()
     return 0;
   }
 
+	unbind(10000);
   if(dns_rep(ibuf, cc)){
     printf("dns: OK\n");
     return 1;

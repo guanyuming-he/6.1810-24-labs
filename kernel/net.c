@@ -35,7 +35,12 @@ void udp_cache_consume(
 	{
 		// It is the ip header that's passed in,
 		// but it's the eth header that's obtained from kalloc().
-		kfree(uc->packets[uc->h].data - sizeof(struct eth));
+		if (uc->packets[uc->h].data)
+		{
+			kfree(uc->packets[uc->h].data - sizeof(struct eth));
+			uc->packets[uc->h].data = 0;
+			uc->packets[uc->h].len = 0;
+		}
 		uc->h = UCACHE_INC(uc->h);
 	}
 }
@@ -108,7 +113,7 @@ sys_bind(void)
   if (!cache)
     panic("sys_bind no mem");
   // Initialize cache
-  cache->h = cache->t = 0;
+	memset(cache, '\0', sizeof(struct udp_cache));
 
   release(&netlock);
   return 0;
@@ -126,23 +131,22 @@ sys_unbind(void)
   // Optional: Your code here.
   //
 
-  int port;
-  argint(0, &port);
-
-  if (port < 0 || port > 65535)
-    return -1;
+  uint16 port;
+  argint(0, (int*)&port);
 
   acquire(&netlock);
   if (!udp_port_bindings[port].cache) // not bound
     goto err_with_lock;
 
+	// Wake up all sleeping sys_recv()s.
+	wakeup(&udp_port_bindings[port]);
   struct udp_cache* cache = udp_port_bindings[port].cache;
   for (uint32 i = 0; i < udp_cache_size(cache); ++i)
   {
 		udp_cache_consume(cache);
   }
   kfree((void*)cache);
-  cache = 0;
+	udp_port_bindings[port].cache = 0;
 
   release(&netlock);
   return 0;
@@ -193,8 +197,14 @@ sys_recv(void)
   struct udp_cache* cache = binding->cache;
   if (!cache) // not bound
     goto err_with_lock;
-  while (cache->h == cache->t) // no packets
+	// the !cache here handles unbinding during sleeping...
+  while (!cache || cache->h == cache->t) // no packets
+	{
     sleep(binding, &netlock);
+		// when we wake up from sleep, the previous cache
+		// might have been freed by unbind. We need to acquire again.
+		cache = binding->cache;
+	}
 
 	// data starts at the IP header.
 	// ETH header was stripped off when it was stored.
