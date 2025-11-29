@@ -1,3 +1,4 @@
+---------------------------------
 The first obstacle is to handle the receive & transmit rings/queues.
 The description of them is quite straightforward in the manual: 
 - hardware uses all inside [head, tail) and software uses all the rest.
@@ -104,3 +105,14 @@ most count-1 descriptors for hardware; head=tail is treated as an empty ring.
 
 See also the graph in ./desc_rings.svg. There I assume head is perfectly
 syncronized with DD.
+
+---------------------------------------------------------------------------
+PART 2
+---------------------------------------------------------------------------
+As always, the lack of data structures in the kernel presents a problem for us
+as to how to record the UDP bindings.  If we had something like a std::map to
+map ports to receive buffers, then it would be so much easier.
+
+On second thought, it would seem that directly having an array of 
+port -> pointer to receive buffers would not be so hard. It would take 
+8 * 65536 = 2^19 bytes = 512 KiB.

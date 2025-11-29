@@ -166,10 +166,6 @@ e1000_transmit(char *buf, int len)
   return 0; 
 }
 
-struct data_len {
-	char* data;
-	int len;
-};
 
 static void
 e1000_recv(void)

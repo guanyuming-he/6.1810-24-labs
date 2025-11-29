@@ -124,3 +124,9 @@ struct rx_desc
   uint16 special;
 };
 
+
+// Need to have a struct to record data.
+struct data_len {
+	char* data;
+	int len;
+};

@@ -125,3 +125,41 @@ struct dns_data {
   uint32 ttl;
   uint16 len;
 } __attribute__((packed));
+
+// For struct data_len
+#include "e1000_dev.h"
+
+#define MAX_NUM_CACHED_PACKETS 16
+
+struct udp_cache {
+	// a ring buffer
+	// H = T then empty.
+	// so max size should +1
+	uint32 h; uint32 t;
+	struct data_len packets[MAX_NUM_CACHED_PACKETS+1];
+};
+// If h != t,
+// then cleans current h with kfree and advances h.
+// The user should have retrieved h prior to calling this, 
+// if he needs that content.
+void udp_cache_consume(
+		struct udp_cache* uc
+);
+// returns (t-h) % N.
+uint32 udp_cache_size(
+		const struct udp_cache* uc
+);
+// if not full yet,
+// advances tail with data. 
+void udp_cache_produce(
+		struct udp_cache* uc,
+		struct data_len data
+);
+
+#define UCACHE_INC(i) ((i)+1)%(MAX_NUM_CACHED_PACKETS+1)
+#define UCACHE_DEC(i) ((i)+1)%(MAX_NUM_CACHED_PACKETS+1)
+
+struct port_binding {
+	// if null then not used.
+	struct udp_cache* cache;
+};
