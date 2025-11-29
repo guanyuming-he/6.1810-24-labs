@@ -181,63 +181,67 @@ e1000_recv(void)
 	// To avoid deadlocking, we do all net_rx outside,
 	// which requires a data structure to store the packets.
 	struct data_len packets[RX_RING_SIZE];
+	// clear mem within so that I know all unused have 0.
+	memset(&packets, '\0', sizeof packets);
 
 	uint32 num_packets = 0;
   // Since the max size is count-1, we need to look after tail.
   // See attack_plan.txt for elaboration.
   uint32 i = RX_INC(RTAIL);
   acquire(&e1000_lock);
-#if RX_USE_DD
-  // Check DD in [tail, tail-1]
   do {
     struct rx_desc* next = &rx_ring[i];
+#if RX_USE_DD
+  // Check DD in [tail, tail-1]
     if ( !(next->status & E1000_RXD_STAT_DD) )
+#else
+  // receive all in [tail+1, head-1]
+		if ( i == RHEAD )
+#endif
       break;
 
+		struct data_len* pkt = &packets[num_packets];
+
 		// create a new buffer for it.
-		packets[num_packets].data = (char*)next->addr;
-		packets[num_packets].len = next->length;
-		next->addr = (uint64)kalloc();
-		if (!next->addr)
-			panic("e1000 NOMEM");
+		// if packets[num_packets].data = null then we are at the start of a new
+		// packet. 
+		if (!pkt->data)
+		{
+			pkt->data = (char*)next->addr;
+			pkt->len = next->length;
+			next->addr = (uint64)kalloc();
+			if (!next->addr)
+				panic("e1000 NOMEM");
+		}
+		else // continuing old packet
+		{
+			memmove(
+					pkt->data + pkt->len,
+					(void*)next->addr,
+					next->length
+			);
+			pkt->len += next->length;
+		}
+		// If end of packet, then advance packet count.
+		if (next->status & E1000_RXD_STAT_EOP)
+			++num_packets;
+
 		// clear status
+		next->length = 0;
 		next->status = 0;
     
     i = RX_INC(i);
-		++num_packets;
   }
   while (i != RTAIL);
 
 	if (num_packets != 0)
 		RTAIL = RX_DEC(i);
-#else
-  // receive all in [tail+1, head-1]
-	for (; i != RHEAD; i = RX_INC(i))
-	{
-    struct rx_desc* next = &rx_ring[i];
-    if ( !(next->status & E1000_RXD_STAT_DD) )
-			panic("e1000 before RDH but not DD");
-
-		// create a new buffer for it.
-		packets[num_packets].data = (char*)next->addr;
-		packets[num_packets].len = next->length;
-		next->addr = (uint64)kalloc();
-		if (!next->addr)
-			panic("e1000 NOMEM");
-		// clear status
-		next->status = 0;
-
-		++num_packets;
-	}
-
-	if (num_packets != 0)
-		RTAIL = RX_DEC(i);
-#endif
   release(&e1000_lock);
 
 	// To avoid deadlocking, we do all net_rx outside,
 	for (uint32 i = 0; i < num_packets; ++i)
 	{
+		// printf("e1000_receive: pkt.len = %d\n", packets[i].len);
 		net_rx(packets[i].data, packets[i].len);
 	}
 

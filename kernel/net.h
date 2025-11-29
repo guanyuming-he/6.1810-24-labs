@@ -153,7 +153,7 @@ uint32 udp_cache_size(
 // advances tail with data. 
 void udp_cache_produce(
 		struct udp_cache* uc,
-		struct data_len data
+		const struct data_len* dl
 );
 
 #define UCACHE_INC(i) ((i)+1)%(MAX_NUM_CACHED_PACKETS+1)

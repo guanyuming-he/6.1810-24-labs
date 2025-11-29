@@ -55,12 +55,13 @@ uint32 udp_cache_size(
 // advances tail with data. 
 void udp_cache_produce(
 		struct udp_cache* uc,
-		struct data_len data
+		const struct data_len* dl
 ) {
 	// recall that the ring buffer's max size is always N-1.
 	if (udp_cache_size(uc) < MAX_NUM_CACHED_PACKETS)
 	{
-		uc->packets[uc->t] = data;
+		uc->packets[uc->t].data = dl->data;
+		uc->packets[uc->t].len = dl->len;
 		uc->t = UCACHE_INC(uc->t);
 	}
 }
@@ -344,9 +345,13 @@ udp_rx(struct ip* buf, int len)
 	if (udp_cache_size(cache) == MAX_NUM_CACHED_PACKETS)
 		goto discard; // full
 
+	// I don't know exactly why the argument len is not as reliable as 
+	// udp_len. The argument is passed to us by 1000,
+	// and perhaps e1000 did some padding.
+	uint16 udp_len = bswaps(udp->ulen);
 	struct data_len dat;
-	dat.data = (char*)buf; dat.len = len;
-	udp_cache_produce(cache, dat);
+	dat.data = (char*)buf; dat.len = udp_len + sizeof(struct ip);
+	udp_cache_produce(cache, &dat);
 
 	// don't forget to wake up all processes waiting!
 	wakeup(binding);
