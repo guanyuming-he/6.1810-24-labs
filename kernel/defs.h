@@ -66,7 +66,8 @@ void            ramdiskrw(struct buf*);
 // kalloc.c
 void*           kalloc(void);
 void            kfree(void *);
-void            kinit(void);
+// Lab lock: add cpuid aint ids param
+void            kinit(int);
 
 // log.c
 void            initlog(int, struct superblock*);

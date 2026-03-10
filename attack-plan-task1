@@ -1,0 +1,27 @@
+Basic idea:
+1. Split kmem into NCPU divisions each of which is assigned to a CPU.
+2. Each is claimed by freerange, which is called by kinit. Thus, main() has to
+be modified to let kinit() be called by each CPU.
+3. If we don't want stealing, then that's enough. But we want stealing. Thus,
+when current CPU's freelist is empty, try to query others'.
+	Deadlock possibility?
+		CPU M holds lock for list_M and tries to query list_N;
+		CPU N holds lock for list_N and tries to query list_M.
+	How to avoid?
+		if current is empty, then release current lock before querying others'.
+	
+A few details as to how the above ideas are implemented:
+1. Integer division problems in dividing free range? See my comment of the code
+	for how I deal with that.
+2. Pass cpuid to kalloc or call cpuid() inside it?
+	Better the latter, since otherwise every call has to be modified.
+	A perhaps much better choice is to give to interfaces
+		kalloc with id param when we have cpuid in ctx
+		kalloc without id param, which calls cpuid and then the first
+	variant, when the caller doesn't have cpuid in ctx.
+3. When kfree, mem may come from another CPU. 
+	a. Always return to original CPU, or
+	b. Just add to the current freelist?
+	b is simpler, but it could gradually make the freelists converge to a state
+	where a freelist gets increasingly larger, defeating the very purpose of
+	dividing them in the first place.

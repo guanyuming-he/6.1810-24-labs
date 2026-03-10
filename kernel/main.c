@@ -19,7 +19,10 @@ main()
     printf("\n");
     printf("xv6 kernel is booting\n");
     printf("\n");
-    kinit();         // physical page allocator
+	// Doesn't matter if we do the init for all CPU freelists
+	// in CPU 0 only.
+	for (int i = 0; i < NCPU; ++i)
+	    kinit(i);         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
     procinit();      // process table
