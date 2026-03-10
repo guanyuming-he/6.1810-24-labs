@@ -1,0 +1,10 @@
+Record the problems I found about xv6 itself.
+Report to the professors.
+
+./kernel/log.c:229 Can just move the line inside the next if, since they are
+already equal otherwise.
+
+./kernel/log.c:147 Variable do_commit is not needed; we can use log.committing
+for it. Although the lock is released at line 164, if committing = 1, then no
+end_op or write_op may be called. Also, all begin_op will sleep, so nothing
+will change its value before we check it.
