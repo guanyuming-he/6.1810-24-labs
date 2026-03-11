@@ -18,6 +18,7 @@ static uint64 len = 0;
 // size of the approximate size of physical mem per CPU
 static uint64 chunk = 0;
 static uint64 boundaries[NCPU+1];
+static const int BATCH=8;
 
 struct run {
   struct run *next;
@@ -26,6 +27,8 @@ struct run {
 struct {
   struct spinlock lock[NCPU];
   struct run *freelist[NCPU];
+  struct run *freecache[NCPU];
+  int num_cached[NCPU];
 } kmem;
 
 // spinlock just assigns lock.name = name with no copy of the str.
@@ -86,6 +89,9 @@ kinit(int id)
   // spinlock just assigns lock.name = name with no copy of the str.
   initlock(&kmem.lock[id], (char*)lock_names[id]);
 
+  freecache[id] = 0;
+  num_cached[id] = 0;
+
   freerange((void*)boundaries[id], (void*)boundaries[id+1]);
 }
 
@@ -137,40 +143,62 @@ kfree(void *pa)
 void *
 kalloc_id(int id)
 {
-  struct run *r;
+	struct run *r = 0;
 
-  acquire(&kmem.lock[id]);
-  r = kmem.freelist[id];
-  if(r) {
-    kmem.freelist[id] = r->next;
-	release(&kmem.lock[id]);
-  }
-  else {
-	release(&kmem.lock[id]);
-	// try to steal. Do not 
-	// start from the same CPU for all, since 
-	// that will create a hot CPU for stealing.
-	// Instead, each first tries to steal from the next.
-	for (int i = id+1; i != id; i=(i+1)%NCPU) 
+	acquire(&kmem.lock[id]);
+	r = kmem.freelist[id];
+	if (r) 
 	{
-		// don't try to lock when reading to avoid
-		// repeatitive contention of empty free list.
-		if (kmem.freelist[i]) {
-			acquire(&kmem.lock[i]);
-			// but the price is that we must test again inside lock.
-			if (kmem.freelist[i]) {
-				r = kmem.freelist[i];
-				kmem.freelist[i] = r->next;
+		kmem.freelist[id] = r->next;
+		release(&kmem.lock[id]);
+	} 
+	else 
+	{
+		release(&kmem.lock[id]);
+		// try to steal multiple pages from other CPUs
+		for (int i = (id+1)%NCPU; i != id; i = (i+1)%NCPU) 
+		{
+			if (kmem.freelist[i]) 
+			{
+				acquire(&kmem.lock[i]);
+				if (kmem.freelist[i]) 
+				{
+					// steal up to BATCH pages
+					struct run *first = kmem.freelist[i];
+					struct run *last = first;
+					int count = 1;
+					while (count < BATCH && last->next) 
+					{
+						last = last->next;
+						count++;
+					}
+
+					// detach batch from victim CPU
+					kmem.freelist[i] = last->next;
+					last->next = 0;  // terminate batch
+
+					release(&kmem.lock[i]);
+
+					// prepend batch to local CPU freelist
+					acquire(&kmem.lock[id]);
+					last->next = kmem.freelist[id];
+					kmem.freelist[id] = first;
+
+					// pop one page for this allocation
+					r = kmem.freelist[id];
+					kmem.freelist[id] = r->next;
+					release(&kmem.lock[id]);
+				} 
+				else 
+					release(&kmem.lock[i]);
+				break; // stop after stealing from one CPU
 			}
-			release(&kmem.lock[i]);
-			break;
 		}
 	}
-  }
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+	if (r)
+		memset((char*)r, 5, PGSIZE); // fill with junk
+	return (void*)r;
 }
 
 void *

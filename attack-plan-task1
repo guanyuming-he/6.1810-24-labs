@@ -35,3 +35,13 @@ lock.
 2. don't start with the same CPU to steal for all. Instead, each starts with
 its next CPU.
 3. try to steal more than one page if possible.
+
+OK, even after having implemented the above, lock contention is still high. 
+WHY?
+After further examination of the code, I believe kfree() is also a source of
+lock contention. Each free of a page tries to contend the lock.
+What if I just maintain a lockless cache first and free in batch?
+	It seems to be a good idea, but it conflicts with my kfree impl where each
+CPU doesn't necessarily put the freed page in its freelist. 
+	Need to figure out what to do.
+
