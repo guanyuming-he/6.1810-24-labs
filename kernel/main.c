@@ -21,6 +21,7 @@ main()
     printf("\n");
 	// Doesn't matter if we do the init for all CPU freelists
 	// in CPU 0 only.
+	calc_boundaries();
 	for (int i = 0; i < NCPU; ++i)
 	    kinit(i);         // physical page allocator
     kvminit();       // create kernel page table

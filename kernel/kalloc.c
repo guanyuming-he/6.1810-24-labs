@@ -17,6 +17,7 @@ extern char end[]; // first address after kernel.
 static uint64 len = 0;
 // size of the approximate size of physical mem per CPU
 static uint64 chunk = 0;
+static uint64 boundaries[NCPU+1];
 
 struct run {
   struct run *next;
@@ -33,7 +34,7 @@ struct {
 // First, 64*8 pointers = 512 bytes
 // Then, 10*6 (kmemn) + 54*7 (kmemnn) = 438 bytes
 // Together = 950 bytes < 1 KiB.
-static const char *lock_names[64] = {
+static char *lock_names[64] = {
     "kmem0","kmem1","kmem2","kmem3","kmem4","kmem5","kmem6","kmem7",
     "kmem8","kmem9","kmem10","kmem11","kmem12","kmem13","kmem14","kmem15",
     "kmem16","kmem17","kmem18","kmem19","kmem20","kmem21","kmem22","kmem23",
@@ -44,6 +45,38 @@ static const char *lock_names[64] = {
     "kmem56","kmem57","kmem58","kmem59","kmem60","kmem61","kmem62","kmem63"
 };
 
+void 
+calc_boundaries(void)
+{
+	// Boundary w.r.t. integer division.
+	// A few interesting problems to note here:
+	// 1. Why chunk = len/NCPU first? Because if we do end + (len*id)/NCPU, then
+	//	len*id may overflow, if len is too large. It won't overflow with xv6's
+	//	len, but it will for real OS with close to 2^64 theoretical possible
+	//	len.
+	// 2. OK, but since chunk = len/NCPU will be floored, won't id*chunk be
+	// inaccurate?
+	//	Yes, but that will at most result in one less page for some
+	//	cores. Since one's free_end is the next's free_beg, the calculations of
+	//	boundaries will be consistent across cores.
+	//		But what about the accumulation of pages lost? The last core will
+	//	absorb all by setting free_end = PHYSTOP.
+	// 3. What about converting everything to double for calc? Not a good idea
+	// since it depends on platform acc of double, whether FPU is enabled at
+	//	 kernel init, and double's own limitation (losing acc with > 2^52
+	//	 integer).
+	len = PHYSTOP - (uint64)end;
+	chunk = len/NCPU;
+	for (int i = 0; i < NCPU; ++i)
+	{
+		if (i == 0) boundaries[i] = PGROUNDUP((uint64)end);
+		else boundaries[i] = PGROUNDDOWN((uint64)end + i*chunk);
+
+		if (i == NCPU-1) boundaries[i+1] = PHYSTOP;
+		else boundaries[i+1] = PGROUNDDOWN((uint64)end + (i+1)*chunk);
+	}
+}
+
 void
 kinit(int id)
 {
@@ -51,42 +84,9 @@ kinit(int id)
 	  panic("kinit: CPU id > 64");
 
   // spinlock just assigns lock.name = name with no copy of the str.
-  initlock(&kmem.lock, lock_names[id]);
+  initlock(&kmem.lock[id], (char*)lock_names[id]);
 
-  // Boundary w.r.t. integer division.
-  // A few interesting problems to note here:
-  // 1. Why chunk = len/NCPU first? Because if we do end + (len*id)/NCPU, then
-  //	len*id may overflow, if len is too large. It won't overflow with xv6's
-  //	len, but it will for real OS with close to 2^64 theoretical possible
-  //	len.
-  // 2. OK, but since chunk = len/NCPU will be floored, won't id*chunk be
-  // inaccurate?
-  //	Yes, but that will at most result in one less page for some
-  //	cores. Since one's free_end is the next's free_beg, the calculations of
-  //	boundaries will be consistent across cores.
-  //		But what about the accumulation of pages lost? The last core will
-  //	absorb all by setting free_end = PHYSTOP.
-  // 3. What about converting everything to double for calc? Not a good idea
-  // since it depends on platform acc of double, whether FPU is enabled at
-  //	 kernel init, and double's own limitation (losing acc with > 2^52
-  //	 integer).
-  if(len == 0)
-	  len = PHYSTOP - (uint64)end;
-  if (chunk == 0)
-	  chunk = len/NCPU;
-  uint64 free_beg = (uint64)end + id*chunk;
-  uint64 free_end = (uint64)end + (id+1)*chunk;
-  // Boundary w.r.t. page granularity.
-  // They must be both PGROUNDDOWN: since the range is
-  // [begin, end), end_i must equal to beg_{i+1}
-  free_beg = PGROUNDDOWN(free_beg);
-  free_end = PGROUNDDOWN(free_end);
-  if (id == 0)
-	  free_beg = PGROUNDUP((unit64)end);
-  if (id == NCPU-1)
-	  free_end = PHYSTOP;
-
-  freerange((void*)free_beg, (void*)free_end);
+  freerange((void*)boundaries[id], (void*)boundaries[id+1]);
 }
 
 void
@@ -117,12 +117,13 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-// calculate  which CPU list the mem belonged to
-	int id = NCPU*((uint64)pa-(uint64)end) / len;
-	// since boundary is rounded down, it's possible
-	// that pa falls slightly behind the end of the calculated id.
-	if (PGROUNDDOWN((uint64)end + (id+1)*chunk) <= pa)
-		if (id < NCPU-1) ++id;
+	// calculate which CPU list the mem belonged to
+	int id = 0;
+	for (; id < NCPU; ++id)
+	{
+		if ((uint64)pa >= boundaries[id] && (uint64)pa < boundaries[id+1])
+			break;
+	}
 
   acquire(&kmem.lock[id]);
   r->next = kmem.freelist[id];
@@ -146,18 +147,24 @@ kalloc_id(int id)
   }
   else {
 	release(&kmem.lock[id]);
-	// try to steal
-	for (int i = 0; i < NCPU; ++i)
+	// try to steal. Do not 
+	// start from the same CPU for all, since 
+	// that will create a hot CPU for stealing.
+	// Instead, each first tries to steal from the next.
+	for (int i = id+1; i != id; i=(i+1)%NCPU) 
 	{
-		if (i == id) continue;
-		acquire(&kmem.lock[i]);
+		// don't try to lock when reading to avoid
+		// repeatitive contention of empty free list.
 		if (kmem.freelist[i]) {
-			r = kmem.freelist[i];
-			kmem.freelist[i] = r->next;
+			acquire(&kmem.lock[i]);
+			// but the price is that we must test again inside lock.
+			if (kmem.freelist[i]) {
+				r = kmem.freelist[i];
+				kmem.freelist[i] = r->next;
+			}
 			release(&kmem.lock[i]);
 			break;
 		}
-		release(&kmem.lock[i]);
 	}
   }
 

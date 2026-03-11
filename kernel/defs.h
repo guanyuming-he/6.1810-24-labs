@@ -64,6 +64,7 @@ void            ramdiskintr(void);
 void            ramdiskrw(struct buf*);
 
 // kalloc.c
+void			calc_boundaries(void);
 void*           kalloc(void);
 void            kfree(void *);
 // Lab lock: add cpuid aint ids param

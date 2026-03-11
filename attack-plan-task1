@@ -25,3 +25,13 @@ A few details as to how the above ideas are implemented:
 	b is simpler, but it could gradually make the freelists converge to a state
 	where a freelist gets increasingly larger, defeating the very purpose of
 	dividing them in the first place.
+
+
+A problem found after first impl with the above ideas: High lock contention,
+still. Solutions:
+1. if stealing is just a linear scan, and each read locks, then the read will
+actually be contended everytime it goes empty. So first I try to not let read
+lock.
+2. don't start with the same CPU to steal for all. Instead, each starts with
+its next CPU.
+3. try to steal more than one page if possible.
